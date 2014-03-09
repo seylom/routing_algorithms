@@ -77,6 +77,11 @@ void *thread_handler(void* pv_nodeitem){
 		 	pthread_exit((void*) 0);
 		}
 		
+		if (numbytes == 0){
+		    break;
+		}
+		
+		
 		buffer[numbytes] = '\0';
 		
 		//Message format expected:  MESSAGE_TYPE|PAYLOAD

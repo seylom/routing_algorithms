@@ -152,6 +152,8 @@ neighbour *extract_hop_info(char *message){
 	
 	const char info_delimiters[] = ":";
 	
+	printf("%s\n", message);
+	
 	distvec_entry *entry = malloc(sizeof(distvec_entry));
 	
 	char *token, *running;
@@ -213,6 +215,10 @@ void *udp_handler_distvec(void* pvdata){
     
     //update_table_entries
     if(strcmp(token, MESSAGE_DISTVEC) == 0){  
+    
+        token = strsep(&running, delimiters);
+        
+        int source_id = atoi(token);
         item_list *dv_list = extract_distvec_list(running);
     }
 }
