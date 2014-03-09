@@ -79,33 +79,48 @@ void *thread_handler(void* pv_nodeitem){
 		
 		buffer[numbytes] = '\0';
 		
+		//Message format expected:  MESSAGE_TYPE|PAYLOAD
+		//Type of payloads: MESSAGE_CONTACT|PortNumber
+		//                  MESSAGE_ACK|MESSAGE_SEND_INFO (to ask for neighbors info)
+		//                  MESSAGE_ACK|MESSAGE_SEND_DATA (to get messages to be sent)
+		//                  MESSAGE_NEIGHBOURS|data
+		//                  
 		char *token, *running;
-		running = strdup(buffer);
-		
+		running = strdup(buffer);	
 		token = strsep (&running, delimiters);
 		
 		if (strcmp(token, MESSAGE_CONTACT) == 0){  //contact message
 		    
 		    token = strsep (&running, delimiters);
 		    
-		    //use connection port retrieved from node contact message.
+		    //Update node's preferred connection port for UDP traffic
+		    //This information is needed when sent to neighbours so that
+		    //they can talk to their neighbours using UDP
 		    strcpy(node->port, token);
 		    
+		    //Gets a uniquely assigned virtual id assigned by manager and 
+		    //used to identify nodes in the vitual topology
             request_virtual_id(&(node->id));
-             
+            
+            //add node to manager list of node_info. Such list contains information
+            //about all node connected to the manager
             register_node(node);
             
             send_neighbours_topo_info_to_node(node->tcp_socketfd, node->id);
 		}
-		else if (strcmp(token, MESSAGE_ACK) == 0){
+		else if (strcmp(token, MESSAGE_ACK) == 0){  //acknoldgement
 		    
 		    token = strsep (&running, delimiters);
 		    
-		    if (strcmp(token, MESSAGE_SEND_INFO) == 0){
-		        //send node info to neighbours
+		    if (strcmp(token, MESSAGE_SEND_INFO) == 0){ 
+		        //send node virtual id + cost
+		        //Also to send full ip + port of node to neighbours
+		        //and vice versa for neighbours which are connected.
 		        send_node_info_to_neighbours(node->id);
 		    }
-		    else if (strcmp(token, MESSAGE_SEND_DATA) == 0){
+		    else if (strcmp(token, MESSAGE_SEND_DATA) == 0){  
+		        
+		        //send data messages to the node
 		        send_node_data_messages(node->id);
 		        
 		        if (setup_completed == 0){
@@ -240,7 +255,6 @@ void get_node_neighbours(int node_id, item_list *neighbours){
 
 /*
 *   Sends new connected node information to already connected nodes.
-*   Format to be sent:  MESSAGE_NODE_INFO|virtual_id|host|port;
 */
 void send_node_info_to_neighbours(int node_id){
     
@@ -275,7 +289,10 @@ void send_node_info_to_neighbours(int node_id){
 	free(neighbours);
 }
 
-
+/*
+*   Sends node information the specified node_info
+*   Format to be sent:  MESSAGE_NODE_INFO|virtual_id|host|port;
+*/
 void send_full_node_information(int socketfd, node_info *ninfo){
 
     char buffer[256];
@@ -294,7 +311,7 @@ void send_full_node_information(int socketfd, node_info *ninfo){
 
 
 /*
-*   retrieve node by its id
+*   find a node by its virtual id
 */
 node_info *find_node_info_by_id(int node_id){
     
@@ -438,8 +455,8 @@ node_info *create_node_info(char* host, in_port_t port, int socketfd){
 
 int main(int argc, char *argv[])
 {
-	int manager; 	//manager socket descriptor
-	int node;	//node
+	int manager;    //manager socket descriptor
+	int node;	    //node
 	int numbytes;
 	struct addrinfo hints, *managerinfo, *p;
 	struct sockaddr_storage node_addr; // connector's address information
@@ -539,7 +556,7 @@ int main(int argc, char *argv[])
 		
 		node_info *contact_node = create_node_info(s, accepted_node_port, node);
 
-        //start a separate thread for the newly created socket
+        //start a separate thread for the node connection
 		pthread_t thread;
 		pthread_create(&thread, NULL, (void*)&thread_handler, (void *)contact_node);
 	}
