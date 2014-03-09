@@ -17,7 +17,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-
+//function pointer 
+void (*node_callback)();
+            
 //sends the provided message through the socket descriptor provided.
 void send_message(int socketfd, char* message){
 	//int n = write(socketfd, message, strlen(message)) ;
@@ -247,10 +249,6 @@ node_info *extract_node_information(char *message){
 	return node;
 }
 
-void build_network_map(){
-    printf("Starting convergence process...\n");
-}
-
 /*
 *   handles UDP packet messages
 */
@@ -264,14 +262,16 @@ void *udp_message_handler(void* pvdata){
 *   Waits for data on a port and spawn of a thread to handle
 *   incoming data and socket information
 */
-void initialize_udp_listening(char* pvnode){
+void initialize_udp_listening(char* pvndtata){
 
-    node_info *node = (node_info*) pvnode;
     int numbytes;
     struct sockaddr_storage node_addr;
     char buf[256];
     socklen_t addr_len;
     
+    node_data *ndata = (node_data*) pvndtata;
+    node_info *node = ndata->node;
+   
     //struct sockaddr_storage node_addr;
     //int numbytes;
     node->udp_socketfd = setup_udp_connection(NULL, node->port);
@@ -300,10 +300,15 @@ void initialize_udp_listening(char* pvnode){
 /*
 *   handles node connection to the manager and message received
 */
-void *node_to_manager_handler(void* pvnode_info){
-    node_info *node = (node_info*)pvnode_info;
+void *node_to_manager_handler(void* pvnd_data){
+
     char buffer[256];
-    int numbytes;
+    int numbytes; 
+    
+    node_data *nd_data = (node_data*)pvnd_data;
+    node_info *node = nd_data->node;
+    
+	item_list *neighbours_list = nd_data->neighbours; 
     
     //First contact
     //send contact message and receive information back
@@ -345,7 +350,7 @@ void *node_to_manager_handler(void* pvnode_info){
 
 			//now that we have the port, start a thread for UDP port communications
 			pthread_t thread;
-			pthread_create(&thread, NULL, (void*)initialize_udp_listening, (void*)node);
+			pthread_create(&thread, NULL, (void*)initialize_udp_listening, (void*)nd_data);
 			
 			//extract neighbours from the rest of the data
 			item_list *nbs = extract_neighbors_info(running);
@@ -354,7 +359,12 @@ void *node_to_manager_handler(void* pvnode_info){
 				item_link *p = nbs->head;
 				
 				while(p){
-					neighbour *nb = (neighbour*)p->data;				
+					neighbour *nb = (neighbour*)p->data;	
+					
+					item_link * nb_link = malloc(sizeof(item_link));
+					nb_link->data = (void*)nb;
+					add_to_list(neighbours_list, nb_link);
+								
 					printf("now linked to node %d with cost %d\n", nb->id, nb->cost);
 					p = p->next;
 				}
@@ -383,7 +393,9 @@ void *node_to_manager_handler(void* pvnode_info){
 		    //not yet implemented
 		}
 		else if (strcmp(token, MESSAGE_START_CONVERGENCE) == 0){
-		    build_network_map();
+		    
+		    node_callback = nd_data->protocol_handler;
+		    node_callback();
 		}
     }
 }

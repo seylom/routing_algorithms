@@ -23,6 +23,8 @@
 
 int virtual_id = 0;
 
+struct node_data *nd_data;
+
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
 {
@@ -33,12 +35,34 @@ void *get_in_addr(struct sockaddr *sa)
 	return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
-/*
-*   UDP handler
-*/
-void *distvec_udp_handler(void * pvdata){
+// start convergence process.
+void build_network_map(){
+
+    if(!nd_data){
+        return;
+    }
     
+    node_info *node = nd_data->node;
+    
+    if (node)
+        printf("Starting convergence process for node %d\n", node->id);
+    
+    //send node distance vector view to the world.
 }
+
+void handle_udp_connections(){
+
+}
+
+void initialize_data_container(node_data *ndata){
+    nd_data = malloc(sizeof(node_data));
+	nd_data->neighbours = malloc(sizeof(item_list));
+	nd_data->neighbours->head = NULL;
+	nd_data->neighbours->tail = NULL;
+    nd_data->neighbours->count = 0;
+    
+    nd_data->protocol_handler = build_network_map;
+} 
 
 int main(int argc, char *argv[])
 {
@@ -60,8 +84,9 @@ int main(int argc, char *argv[])
 	
 	node_tcp = setup_tcp_connection(argv[1], MANAGER_PORT);
 	
-	char *nodePort = (argc >= 3)? argv[2] : NODE_PORT;
-	
+	//char *nodePort = (argc >= 3)? argv[2] : NODE_PORT;
+	initialize_data_container(nd_data);
+
 	//create a node item.
     node_info *item = malloc(sizeof(node_info));
     
@@ -71,12 +96,14 @@ int main(int argc, char *argv[])
     item->port[0] = 0;
     
 	item->tcp_socketfd = node_tcp;
+
+	nd_data->node = item;
 	
 	//strcpy(item->host, "localhost");
 	
 	//create a thread to handle communication with manager
 	pthread_t thread;
-	pthread_create(&thread, NULL, (void*)node_to_manager_handler, (void*)item);
+	pthread_create(&thread, NULL, (void*)node_to_manager_handler, (void*)nd_data);
 
 	while(1){
         //actually, there is nothing here since the thread handling TCP connections

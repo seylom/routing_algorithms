@@ -51,6 +51,13 @@ typedef struct udp_message{
     node_info *source;
 }udp_message;
 
+typedef struct node_data{
+    node_info *node;
+    item_list *neighbours;
+    item_list *messages;
+    void(*protocol_handler)();
+}node_data;
+
 void send_converge_request();
 void send_message(int socketfd, char* message);
 int setup_tcp_connection(char* host, char* port);
