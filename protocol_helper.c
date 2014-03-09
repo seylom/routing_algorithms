@@ -138,7 +138,6 @@ int setup_udp_connection(char* host, char* port){
 */
 void send_udp_message(char *host, char *port, char *message){
 
-
     int sockfd;
     struct addrinfo hints, *servinfo, *p;
     int rv;
@@ -175,9 +174,8 @@ void send_udp_message(char *host, char *port, char *message){
         exit(1);
     }
 
-    freeaddrinfo(servinfo);
-
-    printf("node: sent %d bytes to [%s:%s]\n", numbytes, host, port);
+    freeaddrinfo(servinfo); 
+    
     close(sockfd);
 }
 
@@ -244,6 +242,7 @@ void add_to_list(item_list *list, void* item){
 	
 	if (list == NULL){
 		list = malloc(sizeof(item_list));
+		list->head = NULL;
 		list->tail = NULL;
 		list->count = 0;
 	}
@@ -433,9 +432,7 @@ void *node_to_manager_handler(void* pvnd_data){
 				while(p){
 					neighbour *nb = (neighbour*)p->data;	
 					
-					item_link * nb_link = malloc(sizeof(item_link));
-					nb_link->data = (void*)nb;
-					add_to_list(neighbours_cost_list, nb_link);
+					add_to_list(neighbours_cost_list, nb);
 								
 					printf("now linked to node %d with cost %d\n", nb->id, nb->cost);
 					p = p->next;

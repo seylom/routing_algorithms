@@ -14,6 +14,7 @@
 #define MESSAGE_ACK "ack"
 #define MESSAGE_START_CONVERGENCE "start"
 #define MESSAGE_DATA "data"
+#define MESSAGE_DISTVEC "distvec_broadcast"
 
 #define MAX_DATA_SIZE 1024
 
@@ -61,7 +62,8 @@ typedef struct node_data{
 }node_data;
 
 typedef struct distvec_entry{
-    int id;
+    int destination_id;
+    int next_hop;
     int cost;
 }distvec_entry;
 

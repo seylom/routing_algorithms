@@ -24,6 +24,7 @@
 int virtual_id = 0;
 
 struct node_data *nd_data;
+struct item_list *distvect_table;
 
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
@@ -53,8 +54,41 @@ void find_neighbour_info(int node_id, item_list *list, node_info **node){
             break;
         }
     }
+}
+
+
+void update_routing_table_entry(int destination_id, int next_hop_id, int cost){
     
-    return ;
+    distvec_entry *entry = (distvec_entry*)malloc(sizeof(distvec_entry));
+    entry->destination_id = destination_id;
+    entry->cost = cost;
+    entry->next_hop = next_hop_id;
+    
+    printf("%d %d %d\n",entry->destination_id, entry->next_hop, entry->cost);
+    
+    add_to_list(distvect_table, entry);
+}
+
+void get_routing_table_broadcast(int node_id, char **message){
+    
+    //char buffer[256];
+    char data[256];
+    
+    data[0]= '\0';
+    strcpy(data,"");
+
+    item_link *p = distvect_table->head;
+    
+	for(p;p!=NULL;p = p->next){    
+	    distvec_entry *entry = (distvec_entry*)p->data;
+	    char link_info[10];
+
+	    sprintf(link_info,"|%d:%d:%d", entry->destination_id, entry->next_hop, entry->cost);  
+	    strcat(data, link_info);
+	}
+
+    int num_chars = sprintf(message, "%s|%d%s", MESSAGE_DISTVEC, node_id, data);
+    *message[num_chars] = '\0';
 }
 
 // start convergence process.
@@ -62,6 +96,8 @@ void build_network_map(){
 
     char buffer[256];
     int num_chars;
+    
+    bzero(buffer, 0);
     
     if(!nd_data){
         return;
@@ -77,8 +113,10 @@ void build_network_map(){
     item_list *neighbours = nd_data->neighbours;
     item_list *costs = nd_data->neighbours_cost;
     
-
-    item_link *p = neighbours->head;
+    item_link *p = costs->head;
+    
+    //add the current node to the list
+    update_routing_table_entry(node->id, node->id, 0);
     
     for(p;p!=NULL;p=p->next){
         neighbour *nb = (void*)p->data;
@@ -88,26 +126,104 @@ void build_network_map(){
         
         if (!nb_node)
             continue;
-            
-        bzero(buffer, 0);
-        
-        num_chars = sprintf(buffer,"%s\n","Hello friends");
-        buffer[num_chars] = 0;
-        
-        send_udp_message(nb_node->host,nb_node->port, buffer);
+
+        update_routing_table_entry(nb->id, nb->id, nb->cost);
     }
+    
+    //create broadcast message for neighbors
+    get_routing_table_broadcast(node->id, &buffer);
+    
+    item_link *q = neighbours->head;
+    
+    for(q;q!=NULL;q=q->next){
+        node_info *ninfo = (void*)q->data;
+        
+        if (ninfo)
+            send_udp_message(ninfo->host,ninfo->port, buffer);
+    }
+}
+
+/*
+*   Extract destination:next_hop:cost from message
+*/
+neighbour *extract_hop_info(char *message){
+	if (message == NULL)
+		return NULL;
+	
+	const char info_delimiters[] = ":";
+	
+	distvec_entry *entry = malloc(sizeof(distvec_entry));
+	
+	char *token, *running;
+	running = strdup(message);
+	
+	token = strsep(&running, info_delimiters);
+	entry->destination_id = atoi(token);
+		
+	token = strsep(&running, info_delimiters);
+	entry->next_hop = atoi(token);
+	
+	token = strsep(&running, info_delimiters);
+	entry->cost = atoi(token);
+
+	return entry;
+}
+
+/*
+*   extract distvec from message
+*/
+item_list *extract_distvec_list(char *message){
+	
+	if (message == NULL)
+		return NULL;
+		
+	const char array_delimiters[] = "|";
+	item_list *list = malloc(sizeof(item_list));
+	
+	char *token, *running;
+	running = strdup(message);
+	token = strsep(&running, array_delimiters);
+	
+	while(token){
+		distvec_entry *entry = extract_hop_info(token);
+		
+		if (entry){
+			add_to_list(list, (void*)entry);
+		}else{
+		    break;
+		}
+		
+		token = strsep(&running, array_delimiters);
+	}
+	
+	return list;
 }
 
 /*
 *   handles UDP packet messages
 */
 void *udp_handler_distvec(void* pvdata){
-    udp_message *mess_info = (udp_message*)pvdata;
-    printf("distvec message: %s\n", mess_info->message);
+    udp_message *mess_info = (udp_message*)pvdata; 
+    const char delimiters[] = "|";
+    
+    char *token,*running;
+    running = strdup(mess_info->message);
+    
+    token = strsep(&running, delimiters);
+    
+    //update_table_entries
+    if(strcmp(token, MESSAGE_DISTVEC) == 0){  
+        item_list *dv_list = extract_distvec_list(running);
+    }
+}
+
+void initialize_list(item_list *list){
+
 }
 
 void initialize_data_container(node_data *ndata){
     nd_data = malloc(sizeof(node_data));
+	
 	nd_data->neighbours = malloc(sizeof(item_list));
 	nd_data->neighbours->head = NULL;
 	nd_data->neighbours->tail = NULL;
@@ -120,6 +236,11 @@ void initialize_data_container(node_data *ndata){
     
     nd_data->protocol_handler = build_network_map;
     nd_data->udp_handler = udp_handler_distvec;
+    
+    distvect_table = malloc(sizeof(item_list));
+    distvect_table->head = NULL;
+    distvect_table->tail = NULL;
+    distvect_table->count = 0;
 } 
 
 int main(int argc, char *argv[])
