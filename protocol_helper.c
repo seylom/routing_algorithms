@@ -134,6 +134,54 @@ int setup_udp_connection(char* host, char* port){
 }
 
 /*
+*   sends UDP message
+*/
+void send_udp_message(char *host, char *port, char *message){
+
+
+    int sockfd;
+    struct addrinfo hints, *servinfo, *p;
+    int rv;
+    int numbytes;
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
+
+    if ((rv = getaddrinfo(host, port, &hints, &servinfo)) != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+        return 1;
+    }
+
+    // loop through all the results and make a socket
+    for(p = servinfo; p != NULL; p = p->ai_next) {
+        if ((sockfd = socket(p->ai_family, p->ai_socktype,
+                p->ai_protocol)) == -1) {
+            perror("node: socket");
+            continue;
+        }
+
+        break;
+    }
+
+    if (p == NULL) {
+        fprintf(stderr, "node: failed to bind socket\n");
+        return 2;
+    }
+
+    if ((numbytes = sendto(sockfd, message, strlen(message), 0,
+             p->ai_addr, p->ai_addrlen)) == -1) {
+        perror("node: sendto");
+        exit(1);
+    }
+
+    freeaddrinfo(servinfo);
+
+    printf("node: sent %d bytes to [%s:%s]\n", numbytes, host, port);
+    close(sockfd);
+}
+
+/*
 *   Extract virtual id and cost for the neighbour in the message
 */
 neighbour *extract_neighbor(char *message){
@@ -216,6 +264,21 @@ void add_to_list(item_list *list, void* item){
 	list->count += 1;
 }
 
+void delete_list(item_link** head)
+{
+   item_link* current = *head;
+   item_link* next;
+ 
+   while (current != NULL) 
+   {
+       next = current->next;
+       free(current);
+       current = next;
+   }
+   
+   *head = NULL;
+}
+
 /*
 *   Extract full node information from message sent to all neighbour upon
 *   a new node joining.
@@ -271,6 +334,9 @@ void initialize_udp_listening(char* pvndtata){
     
     node_data *ndata = (node_data*) pvndtata;
     node_info *node = ndata->node;
+    
+    if (!ndata->udp_handler)
+        ndata->udp_handler = udp_message_handler;
    
     //struct sockaddr_storage node_addr;
     //int numbytes;
@@ -286,6 +352,8 @@ void initialize_udp_listening(char* pvndtata){
                 exit(1);
         }
         
+        printf("listening...\n");
+        
         udp_message *message_info = malloc(sizeof(udp_message));
         message_info->message = malloc(256);
         strncpy(message_info->message, buf, numbytes);
@@ -293,7 +361,7 @@ void initialize_udp_listening(char* pvndtata){
         message_info->source = NULL;
         
         pthread_t thread;
-        pthread_create(&thread, NULL, (void*)udp_message_handler, (void*)message_info);
+        pthread_create(&thread, NULL, (void*)ndata->udp_handler, (void*)message_info);
     }
 }
 
@@ -330,7 +398,10 @@ void *node_to_manager_handler(void* pvnd_data){
 		    	exit(1);
 		}
 		
-		//printf("message-received: %s\n", buffer);
+		if(numbytes == 0){
+		    printf("Manager socket closed - exiting.\n");
+		    break;
+		}
 		
 		char *token, *running;
 		running = strdup(buffer);
@@ -379,6 +450,7 @@ void *node_to_manager_handler(void* pvnd_data){
 			
 		}
 		else if (strcmp(token, MESSAGE_NODE_INFO) == 0){ //node info message
+			
 			node_info *nb = extract_node_information(running);
 			
 			add_to_list(neighbours_list, nb);
@@ -388,6 +460,7 @@ void *node_to_manager_handler(void* pvnd_data){
 			buffer[numnext] = '\0';
 			
 			send_message(node->tcp_socketfd, buffer);
+			
 		}
 		else if (strcmp(token, MESSAGE_DATA) == 0){
 		    //not yet implemented
@@ -398,4 +471,6 @@ void *node_to_manager_handler(void* pvnd_data){
 		    node_callback();
 		}
     }
+    
+    pthread_exit(NULL);
 }

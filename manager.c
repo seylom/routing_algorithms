@@ -284,10 +284,9 @@ void send_node_info_to_neighbours(int node_id){
 
         send_full_node_information(ninfo->tcp_socketfd, current_node);
         send_full_node_information(current_node->tcp_socketfd, ninfo);
-        
-	        //}
-	    //}
 	}
+	
+	delete_list(&(neighbours->head));
 	
 	free(neighbours);
 }
@@ -340,7 +339,7 @@ node_info *find_node_info_by_id(int node_id){
 /*
 *   reads the topology file and returns a list of edge
 */
-item_list *read_topology_file(char* filename){
+void read_topology_file(char* filename){
 	int c;
 	FILE *file;
 	file= fopen(filename,"r");
@@ -393,23 +392,6 @@ void read_message_file(char* filename){
 	}
 
 	fclose(file);
-}
-
-void send_tcp_message(int sourcefd, int destfd, char* message){
-      
-}
-
-void send_udp_message(int sourcefd, int destfd, char* message){
-    
-}
-
-
-char* get_tcp_message(){
-
-}
-
-char* get_udp_message(){
-
 }
 
 /*

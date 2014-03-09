@@ -57,13 +57,20 @@ typedef struct node_data{
     item_list *neighbours_cost;
     item_list *messages;
     void(*protocol_handler)();
+    void(**udp_handler)(void*);
 }node_data;
+
+typedef struct distvec_entry{
+    int id;
+    int cost;
+}distvec_entry;
 
 void send_converge_request();
 void send_message(int socketfd, char* message);
 int setup_tcp_connection(char* host, char* port);
 int setup_udp_connection(char* host, char* port);
 void *node_to_manager_handler(void* pvnode_item);
+void send_udp_message(char *host, char *port, char *message);
 
 void send_node_info_to_neighbours(int id);
 node_info *find_node_info_by_id(int node_id);

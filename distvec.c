@@ -35,9 +35,34 @@ void *get_in_addr(struct sockaddr *sa)
 	return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
+
+/*
+*   find a node by its virtual id
+*/
+void find_neighbour_info(int node_id, item_list *list, node_info **node){
+    
+    if (!list)
+        return NULL;
+        
+    item_link * p = list->head;
+    
+    for(p;p!=NULL;p=p->next){
+        
+        if (((node_info*)p->data)->id == node_id){
+            *node = (node_info*)p->data;
+            break;
+        }
+    }
+    
+    return ;
+}
+
 // start convergence process.
 void build_network_map(){
 
+    char buffer[256];
+    int num_chars;
+    
     if(!nd_data){
         return;
     }
@@ -47,11 +72,38 @@ void build_network_map(){
     if (node)
         printf("Starting convergence process for node %d\n", node->id);
     
-    //send node distance vector view to the world.
+    //send node distance vector view to neighbours.
+    
+    item_list *neighbours = nd_data->neighbours;
+    item_list *costs = nd_data->neighbours_cost;
+    
+
+    item_link *p = neighbours->head;
+    
+    for(p;p!=NULL;p=p->next){
+        neighbour *nb = (void*)p->data;
+        
+        node_info *nb_node;
+        find_neighbour_info(nb->id,neighbours, &nb_node);
+        
+        if (!nb_node)
+            continue;
+            
+        bzero(buffer, 0);
+        
+        num_chars = sprintf(buffer,"%s\n","Hello friends");
+        buffer[num_chars] = 0;
+        
+        send_udp_message(nb_node->host,nb_node->port, buffer);
+    }
 }
 
-void handle_udp_connections(){
-
+/*
+*   handles UDP packet messages
+*/
+void *udp_handler_distvec(void* pvdata){
+    udp_message *mess_info = (udp_message*)pvdata;
+    printf("distvec message: %s\n", mess_info->message);
 }
 
 void initialize_data_container(node_data *ndata){
@@ -67,6 +119,7 @@ void initialize_data_container(node_data *ndata){
     nd_data->neighbours_cost->count = 0;
     
     nd_data->protocol_handler = build_network_map;
+    nd_data->udp_handler = udp_handler_distvec;
 } 
 
 int main(int argc, char *argv[])
@@ -104,7 +157,7 @@ int main(int argc, char *argv[])
 
 	nd_data->node = item;
 	
-	//strcpy(item->host, "localhost");
+	strcpy(item->host, "localhost");
 	
 	//create a thread to handle communication with manager
 	pthread_t thread;
