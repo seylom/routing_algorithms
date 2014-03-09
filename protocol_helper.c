@@ -87,6 +87,8 @@ int setup_tcp_connection(char* host, char* port){
 */
 int setup_udp_connection(char* host, char* port){
 
+    printf("%s", port);
+    
     int node;
     struct addrinfo node_hints, *nodeinfo, *q;
     int rv;
@@ -95,6 +97,7 @@ int setup_udp_connection(char* host, char* port){
     memset(&node_hints, 0, sizeof node_hints);
 	node_hints.ai_family = AF_UNSPEC;
 	node_hints.ai_socktype = SOCK_DGRAM;
+	node_hints.ai_flags = AI_PASSIVE;
 
 	if ((rv = getaddrinfo(host, port, &node_hints, &nodeinfo)) != 0) {
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
@@ -254,6 +257,29 @@ void build_network_map(){
     printf("Starting convergence process...\n");
 }
 
+
+/*
+*   Waits for data on a port and spawn of a thread to handle
+*   incoming data and socket information
+*/
+void initialize_udp_listening(char* pvport){
+
+    char *port = (char*) pvport;
+    
+    int node_udp = setup_udp_connection(NULL, port);
+    
+    while(1){
+        //wait for data and upon receival, span of yet another
+        //thread to handle it and keep the socket from being busy
+        
+/*        if ((numbytes = recvfrom(node_udp, buf, MAX_DATA_SIZE-1 , 0,*/
+/*                (struct sockaddr *)&node_addr, &addr_len)) == -1) {*/
+/*                perror("recvfrom");*/
+/*                exit(1);*/
+/*            }*/
+    }
+}
+
 /*
 *   handles node connection to the manager and message received
 */
@@ -266,7 +292,7 @@ void *node_to_manager_handler(void* pvnode_info){
     //send contact message and receive information back
     const char delimiters[] = "|";
     
-    int num_chars = sprintf(buffer, "%s|%s", MESSAGE_CONTACT, node->port);
+    int num_chars = sprintf(buffer, "%s|req", MESSAGE_CONTACT);
     
     buffer[num_chars] = '\0';
     
@@ -288,8 +314,25 @@ void *node_to_manager_handler(void* pvnode_info){
 		
 		token = strsep (&running, delimiters);
 		
-		if (strcmp(token, MESSAGE_NEIGHBOURS) == 0){ //neighbor message
+		if (strcmp(token, MESSAGE_TOPO_INFO) == 0){ //info about topo and neighbors
 			
+			printf("received topo info %s\n", running);
+			
+			//The message should look like the following
+			//MESSAGE_TOPO_INFO|assigned_id|id1:cost1|id2:cost2|id3:cost3|...
+			//extract our virtual id
+			token = strsep (&running, delimiters);
+			node->id = atoi(token);
+			
+			int port = atoi(NODE_PORT) + node->id; // e.j (7000 + 1) for first node
+			int num_port_chars = sprintf(node->port, "%d", port);
+			node->port[num_port_chars] = 0; 
+
+			//now that we have the port, start a thread for UDP port communications
+			pthread_t thread;
+			pthread_create(&thread, NULL, (void*)initialize_udp_listening, (void*)node->port);
+			
+			//extract neighbours from the rest of the data
 			item_list *nbs = extract_neighbors_info(running);
 			
 			if (nbs){	

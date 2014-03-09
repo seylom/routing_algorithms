@@ -91,13 +91,8 @@ void *thread_handler(void* pv_nodeitem){
 		
 		if (strcmp(token, MESSAGE_CONTACT) == 0){  //contact message
 		    
-		    token = strsep (&running, delimiters);
-		    
-		    //Update node's preferred connection port for UDP traffic
-		    //This information is needed when sent to neighbours so that
-		    //they can talk to their neighbours using UDP
-		    strcpy(node->port, token);
-		    
+		    //token = strsep (&running, delimiters);
+
 		    //Gets a uniquely assigned virtual id assigned by manager and 
 		    //used to identify nodes in the vitual topology
             request_virtual_id(&(node->id));
@@ -106,7 +101,15 @@ void *thread_handler(void* pv_nodeitem){
             //about all node connected to the manager
             register_node(node);
             
-            send_neighbours_topo_info_to_node(node->tcp_socketfd, node->id);
+            //Update node's preferred connection port for UDP traffic
+		    //This information is needed when sent to neighbours so that
+		    //they can talk to their neighbours using UDP
+		    int port_no = atoi(NODE_PORT) + node->id;
+		    int n = sprintf(node->port,"%d",port_no);
+		    node->port[n]=0;
+            
+            //send virtual id and neighbours info
+            send_virtual_id_and_neighbours_topo(node->tcp_socketfd, node->id);
 		}
 		else if (strcmp(token, MESSAGE_ACK) == 0){  //acknoldgement
 		    
@@ -196,9 +199,9 @@ void request_virtual_id(int *id){
 
 /*
 *   send virtual neighbours id and cost to a node
-*   Format to be sent:  MESSAGE_NEIGHBOURS|id1:cost1|id2:cost2|id3:cost3|...;
+*   Format to be sent:  MESSAGE_TOPO_INFO|virtual_id|id1:cost1|id2:cost2|id3:cost3|...;
 */
-void send_neighbours_topo_info_to_node(int socketfd, int node_id){
+void send_virtual_id_and_neighbours_topo(int socketfd, int node_id){
     
     char buffer[256];
     char data[256];
@@ -223,7 +226,7 @@ void send_neighbours_topo_info_to_node(int socketfd, int node_id){
 	    strcat(data, link_info);
 	}
 
-    int num_chars = sprintf(buffer, "%s%s", MESSAGE_NEIGHBOURS, data);
+    int num_chars = sprintf(buffer, "%s|%d%s", MESSAGE_TOPO_INFO, node_id, data);
     buffer[num_chars] = '\0';
     
     send_message(socketfd, buffer);

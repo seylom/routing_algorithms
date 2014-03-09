@@ -4,11 +4,11 @@
 #define _PROTOCOL_HELPER_H
 
 #define MANAGER_PORT "5555"
+#define NODE_PORT "7000"
 
 #define MESSAGE_CONTACT "contact"
-#define MESSAGE_NEIGHBOURS "neighbours"
-#define MESSAGE_TOPO "topo"
-#define MESSAGE_NODE_INFO "nodeinfo"
+#define MESSAGE_TOPO_INFO "topo_info"
+#define MESSAGE_NODE_INFO "node_info"
 #define MESSAGE_SEND_INFO "send_info"
 #define MESSAGE_SEND_DATA "send_data"
 #define MESSAGE_ACK "ack"

@@ -52,7 +52,7 @@ int main(int argc, char *argv[])
 	char s[INET6_ADDRSTRLEN];
 
 	if (argc < 2) {
-	    fprintf(stderr,"usage: %s managerhostname [node_port]\n", argv[0]);
+	    fprintf(stderr,"usage: %s managerhostname\n", argv[0]);
 	    exit(1);
 	}
 	
@@ -65,8 +65,9 @@ int main(int argc, char *argv[])
     
     item->host = malloc(INET6_ADDRSTRLEN);
     item->host[0] = '\0';
+    item->port = malloc(50);
+    item->port[0] = 0;
     
-	item->port = nodePort;
 	item->tcp_socketfd = node_tcp;
 	
 	//strcpy(item->host, "localhost");
@@ -74,21 +75,19 @@ int main(int argc, char *argv[])
 	//create a thread to handle communication with manager
 	pthread_t thread;
 	pthread_create(&thread, NULL, (void*)node_to_manager_handler, (void*)item);
-	
-	node_udp = setup_udp_connection(NULL, nodePort);
 
 	while(1){
-            if ((numbytes = recvfrom(node_udp, buf, MAX_DATA_SIZE-1 , 0,
-                (struct sockaddr *)&node_addr, &addr_len)) == -1) {
-                perror("recvfrom");
-                exit(1);
-            }
-            
-            //grab the data and send it to a new thread
-            //TODO: modify to pass a structure as a parameter of the thread with a copy of the message
-            
-            pthread_t thread;
-            pthread_create(&thread, NULL, (void*)distvec_udp_handler, (void*)&node_udp);
+/*            if ((numbytes = recvfrom(node_udp, buf, MAX_DATA_SIZE-1 , 0,*/
+/*                (struct sockaddr *)&node_addr, &addr_len)) == -1) {*/
+/*                perror("recvfrom");*/
+/*                exit(1);*/
+/*            }*/
+/*            */
+/*            //grab the data and send it to a new thread*/
+/*            //TODO: modify to pass a structure as a parameter of the thread with a copy of the message*/
+/*            */
+/*            pthread_t thread;*/
+/*            pthread_create(&thread, NULL, (void*)distvec_udp_handler, (void*)&node_udp);*/
 	}
 
 	close(node_udp);
