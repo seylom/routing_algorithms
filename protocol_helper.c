@@ -73,9 +73,6 @@ int setup_tcp_connection(char* host, char* port){
 		return 2;
 	}
 
-	//inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr), s, sizeof s);
-	//printf("distvec: connecting to %s\n", s);
-
 	freeaddrinfo(managerinfo); // all done with this structure
 
 	return node;
@@ -87,8 +84,6 @@ int setup_tcp_connection(char* host, char* port){
 */
 int setup_udp_connection(char* host, char* port){
 
-    printf("%s", port);
-    
     int node;
     struct addrinfo node_hints, *nodeinfo, *q;
     int rv;
@@ -97,7 +92,6 @@ int setup_udp_connection(char* host, char* port){
     memset(&node_hints, 0, sizeof node_hints);
 	node_hints.ai_family = AF_UNSPEC;
 	node_hints.ai_socktype = SOCK_DGRAM;
-	node_hints.ai_flags = AI_PASSIVE;
 
 	if ((rv = getaddrinfo(host, port, &node_hints, &nodeinfo)) != 0) {
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
@@ -257,26 +251,49 @@ void build_network_map(){
     printf("Starting convergence process...\n");
 }
 
+/*
+*   handles UDP packet messages
+*/
+void *udp_message_handler(void* pvdata){
+    udp_message *mess_info = (udp_message*)pvdata;
+    
+    printf("%s\n", mess_info->message);
+}
 
 /*
 *   Waits for data on a port and spawn of a thread to handle
 *   incoming data and socket information
 */
-void initialize_udp_listening(char* pvport){
+void initialize_udp_listening(char* pvnode){
 
-    char *port = (char*) pvport;
+    node_info *node = (node_info*) pvnode;
+    int numbytes;
+    struct sockaddr_storage node_addr;
+    char buf[256];
+    socklen_t addr_len;
     
-    int node_udp = setup_udp_connection(NULL, port);
+    //struct sockaddr_storage node_addr;
+    //int numbytes;
+    node->udp_socketfd = setup_udp_connection(NULL, node->port);
     
     while(1){
         //wait for data and upon receival, span of yet another
         //thread to handle it and keep the socket from being busy
         
-/*        if ((numbytes = recvfrom(node_udp, buf, MAX_DATA_SIZE-1 , 0,*/
-/*                (struct sockaddr *)&node_addr, &addr_len)) == -1) {*/
-/*                perror("recvfrom");*/
-/*                exit(1);*/
-/*            }*/
+        if ((numbytes = recvfrom(node->udp_socketfd, buf, sizeof buf , 0,
+                (struct sockaddr *)&node_addr, &addr_len)) == -1) {
+                perror("recvfrom");
+                exit(1);
+        }
+        
+        udp_message *message_info = malloc(sizeof(udp_message));
+        message_info->message = malloc(256);
+        strncpy(message_info->message, buf, numbytes);
+        
+        message_info->source = NULL;
+        
+        pthread_t thread;
+        pthread_create(&thread, NULL, (void*)udp_message_handler, (void*)message_info);
     }
 }
 
@@ -316,8 +333,6 @@ void *node_to_manager_handler(void* pvnode_info){
 		
 		if (strcmp(token, MESSAGE_TOPO_INFO) == 0){ //info about topo and neighbors
 			
-			printf("received topo info %s\n", running);
-			
 			//The message should look like the following
 			//MESSAGE_TOPO_INFO|assigned_id|id1:cost1|id2:cost2|id3:cost3|...
 			//extract our virtual id
@@ -330,7 +345,7 @@ void *node_to_manager_handler(void* pvnode_info){
 
 			//now that we have the port, start a thread for UDP port communications
 			pthread_t thread;
-			pthread_create(&thread, NULL, (void*)initialize_udp_listening, (void*)node->port);
+			pthread_create(&thread, NULL, (void*)initialize_udp_listening, (void*)node);
 			
 			//extract neighbours from the rest of the data
 			item_list *nbs = extract_neighbors_info(running);

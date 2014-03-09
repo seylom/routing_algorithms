@@ -21,6 +21,8 @@
 #include <pthread.h>
 #include "protocol_helper.h"
 
+int virtual_id = 0;
+
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
 {
@@ -77,17 +79,8 @@ int main(int argc, char *argv[])
 	pthread_create(&thread, NULL, (void*)node_to_manager_handler, (void*)item);
 
 	while(1){
-/*            if ((numbytes = recvfrom(node_udp, buf, MAX_DATA_SIZE-1 , 0,*/
-/*                (struct sockaddr *)&node_addr, &addr_len)) == -1) {*/
-/*                perror("recvfrom");*/
-/*                exit(1);*/
-/*            }*/
-/*            */
-/*            //grab the data and send it to a new thread*/
-/*            //TODO: modify to pass a structure as a parameter of the thread with a copy of the message*/
-/*            */
-/*            pthread_t thread;*/
-/*            pthread_create(&thread, NULL, (void*)distvec_udp_handler, (void*)&node_udp);*/
+        //actually, there is nothing here since the thread handling TCP connections
+        //waits on virtual id assignment to kick off UDP port reading (port_no = virtual_id + 7000)
 	}
 
 	close(node_udp);
