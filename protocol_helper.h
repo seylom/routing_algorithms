@@ -54,6 +54,7 @@ typedef struct udp_message{
 typedef struct node_data{
     node_info *node;
     item_list *neighbours;
+    item_list *neighbours_cost;
     item_list *messages;
     void(*protocol_handler)();
 }node_data;

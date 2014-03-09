@@ -308,7 +308,8 @@ void *node_to_manager_handler(void* pvnd_data){
     node_data *nd_data = (node_data*)pvnd_data;
     node_info *node = nd_data->node;
     
-	item_list *neighbours_list = nd_data->neighbours; 
+	item_list *neighbours_list = nd_data->neighbours;
+	item_list *neighbours_cost_list = nd_data->neighbours_cost;
     
     //First contact
     //send contact message and receive information back
@@ -363,7 +364,7 @@ void *node_to_manager_handler(void* pvnd_data){
 					
 					item_link * nb_link = malloc(sizeof(item_link));
 					nb_link->data = (void*)nb;
-					add_to_list(neighbours_list, nb_link);
+					add_to_list(neighbours_cost_list, nb_link);
 								
 					printf("now linked to node %d with cost %d\n", nb->id, nb->cost);
 					p = p->next;
@@ -380,8 +381,7 @@ void *node_to_manager_handler(void* pvnd_data){
 		else if (strcmp(token, MESSAGE_NODE_INFO) == 0){ //node info message
 			node_info *nb = extract_node_information(running);
 			
-			//printf("Node information received: id->%d host->%s port->%s\n", 
-			//	nb->id, nb->host, nb->port);
+			add_to_list(neighbours_list, nb);
 			
 			bzero(buffer, 256);
 			int numnext = sprintf(buffer,"%s|%s", MESSAGE_ACK, MESSAGE_SEND_DATA );

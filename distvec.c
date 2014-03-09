@@ -61,6 +61,11 @@ void initialize_data_container(node_data *ndata){
 	nd_data->neighbours->tail = NULL;
     nd_data->neighbours->count = 0;
     
+    nd_data->neighbours_cost = malloc(sizeof(item_list));
+	nd_data->neighbours_cost->head = NULL;
+	nd_data->neighbours_cost->tail = NULL;
+    nd_data->neighbours_cost->count = 0;
+    
     nd_data->protocol_handler = build_network_map;
 } 
 
