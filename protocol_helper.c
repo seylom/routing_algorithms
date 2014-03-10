@@ -556,7 +556,6 @@ void *node_to_manager_handler(void* pvnd_data){
 		    bzero(buffer, 256);
 			int numnext = sprintf(buffer,"%s", MESSAGE_ACK);
 			buffer[numnext] = '\0';
-			
 			send_message(node->tcp_socketfd, buffer);
 			
 		    message_router = nd_data->route_message_handler;

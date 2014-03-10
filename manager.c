@@ -208,6 +208,8 @@ void send_node_data_messages(node_info *node){
 */
 void send_converge_request(){
 
+    //printf("request for converge\n");
+    
     item_link * p = client_nodes->head;
     char buffer[50];
     int num_chars = sprintf(buffer, "%s|%s", MESSAGE_START_CONVERGENCE,"go");

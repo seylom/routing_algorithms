@@ -91,6 +91,6 @@ void request_virtual_id(int *id);
 item_list *extract_neighbors_info(char *message);
 neighbour *extract_neighbor(char *message);
 node_info *extract_node_information(char *message);
-data_message  *extract_message(char *message, int from_neighbour);
+
 
 #endif

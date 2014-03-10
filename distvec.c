@@ -33,6 +33,31 @@ timer_t node_timer;
 
 struct node_data *nd_data;
 struct item_list *distvect_table;
+typedef int (*compfn)(const void*, const void*);
+void build_network_map();
+
+data_message  *extract_message(char *message, int from_neighbour);
+item_list *extract_distvec_list(char *message);
+distvec_entry *extract_hop_info(char *message);
+void find_table_entry(int dest_id, distvec_entry **entry);
+void start_timer(timer_t timer, int seconds);
+void time_elapsed();
+void time_elapsed();
+int cost_to_hop(int neighbour_id);
+void get_routing_table_broadcast(int node_id, char **message);
+
+static int compare(const void *p1, const void *p2)
+{
+    int y1 = ((const struct distvec_entry*)p1)->dest_id;
+    int y2 = ((const struct distvec_entry*)p2)->dest_id;
+
+    if (y1 < y2)
+        return -1;
+    else if (y1 > y2)
+        return 1;
+
+    return 0;
+}
 
 void start_timer(timer_t timer, int seconds)
 {
@@ -51,12 +76,14 @@ void start_timer(timer_t timer, int seconds)
 
 void time_elapsed(){
     
-    printf("node %d has converged\n", nd_data->node->id);
+    //printf("node %d has converged\n", nd_data->node->id);
     
     //send message to the manager to get messages to be sent, if any
     char buffer[256];
     int num_chars = sprintf(buffer, "%s|%s", MESSAGE_CONVERGED, MESSAGE_SEND_DATA);
     buffer[num_chars] = '\0';
+    
+    print_routing_table();
     
     send_message(nd_data->node->tcp_socketfd, buffer);
 }
@@ -128,79 +155,20 @@ void find_table_entry(int dest_id, distvec_entry **entry){
 
 int cost_to_hop(int neighbour_id){
     
-    item_link *p = nd_data->neighbours->head;
+    item_link *p = nd_data->neighbours_cost->head;
     neighbour *current;
     
     while(p){
         current = (neighbour*)p->data;
         
-        if (current->id == neighbour_id)
+        if (current->id == neighbour_id){
             return current->cost;
+        }
+            
+        p = p->next;
     }
     
     return -1; //not found
-}
-
-void add_routing_table_entry(int dest_id, int next_hop_id, int cost){
-    
-    distvec_entry *entry = (distvec_entry*)malloc(sizeof(distvec_entry));
-    entry->dest_id = dest_id;
-    entry->cost = cost;
-    entry->next_hop = next_hop_id;
-    
-    printf("adding entry - %d %d %d\n",entry->dest_id, entry->next_hop, entry->cost);
-    
-    add_to_list(distvect_table, entry);
-}
-
-int update_routing_table_entries(item_list *new_entries){
-
-    pthread_mutex_lock(&mutex_routing_update);
-    
-    int update = 0;
-    item_link *p = new_entries->head;
-    
-    while(p){
-        distvec_entry *entry = (distvec_entry*)p->data;
-        
-        if (update_routing_table_entry(entry->dest_id, entry->next_hop, entry->cost) > 0) 
-            update = 1;
-    }
-    
-    pthread_mutex_unlock(&mutex_routing_update);
-    
-    return update;
-}
-
-
-int update_routing_table_entry(int dest_id, int next_hop_id, int cost){
-    
-    int update = 0;
-    //pthread_mutex_lock(&mutex_routing_list); 
-    //check and update if necessary
-    
-    distvec_entry *entry;
-    find_table_entry(dest_id, &entry);
-    
-    if (!entry){     
-        //add if the entry was never seen before
-        add_routing_table_entry(dest_id, next_hop_id, cost);
-        update = 1;
-    }
-    else{
-        //compare cost and udpate
-        int hop_cost = cost_to_hop(next_hop_id);
-           
-        if (entry->cost > (cost + hop_cost)){
-            entry->cost = cost + hop_cost;
-            entry->next_hop = next_hop_id;
-            update = 1;
-        } 
-    }
-    
-    //pthread_mutex_unlock(&mutex_routing_list);
-    
-    return update; //no updates
 }
 
 void get_routing_table_broadcast(int node_id, char **message){
@@ -241,8 +209,8 @@ void build_network_map(){
     
     node_info *node = nd_data->node;
     
-    if (node)
-        printf("Starting convergence process for node %d\n", node->id);
+/*    if (node)*/
+/*        printf("Starting convergence process for node %d\n", node->id);*/
     
     //send node distance vector view to neighbours. 
     pthread_mutex_lock(&mutex_routing_update);
@@ -253,7 +221,8 @@ void build_network_map(){
     item_link *p = costs->head;
     
     //add the current node to the list
-    update_routing_table_entry(node->id, node->id, 0);
+    //update_routing_table_entry(node->id, node->id, node->id, 0);
+    add_routing_table_entry(node->id, node->id, 0);
     
     for(p;p!=NULL;p=p->next){
         neighbour *nb = (void*)p->data;
@@ -264,7 +233,8 @@ void build_network_map(){
         if (!nb_node)
             continue;
 
-        update_routing_table_entry(nb->id, nb->id, nb->cost);
+        //update_routing_table_entry(node->id, nb->id, nb->id, nb->cost);
+        add_routing_table_entry(nb->id, nb->id, nb->cost);
     }
     
     pthread_mutex_unlock(&mutex_routing_update);
@@ -272,6 +242,8 @@ void build_network_map(){
     broadcast_routing_table();
     
     ready = 1;
+    
+    
 }
 
 void broadcast_routing_table(){
@@ -288,6 +260,8 @@ void broadcast_routing_table(){
     //creating message to be sent to neighbors
     pthread_mutex_lock(&mutex_routing_list);
 
+    //printf("size of routing table: %d\n", distvect_table->count);
+    
     item_link *p = distvect_table->head;
     
 	for(p;p!=NULL;p = p->next){    
@@ -309,6 +283,30 @@ void broadcast_routing_table(){
     start_timer(node_timer, 5);
 }
 
+void print_routing_table(){
+
+    struct distvec_entry entries[distvect_table->count];
+    
+    item_link *p = distvect_table->head;
+    int i = 0;
+    int j = 0;
+    
+    for(p; p!=NULL; p=p->next){
+        distvec_entry *item = (distvec_entry*)p->data;
+        
+        entries[i] = *item;
+        i++;
+    }
+    
+    qsort(&entries, distvect_table->count, 
+            sizeof(struct distvec_entry), 
+            (compfn) compare);
+            
+    for(j=0; j< distvect_table->count; j++){
+        printf("%d %d %d\n", entries[j].dest_id,  entries[j].next_hop,  entries[j].cost);
+    }
+}
+
 
 void broadcast_message(char* message){
     //sending message to neighbours
@@ -323,31 +321,108 @@ void broadcast_message(char* message){
 }
 
 /*
-*   Extract destination:next_hop:cost from message
+*   handles UDP packet messages
 */
-neighbour *extract_hop_info(char *message){
-	if (message == NULL)
-		return NULL;
-	
-	const char info_delimiters[] = ":";
-	
-	printf("%s\n", message);
-	
-	distvec_entry *entry = malloc(sizeof(distvec_entry));
-	
-	char *token, *running;
-	running = strdup(message);
-	
-	token = strsep(&running, info_delimiters);
-	entry->dest_id = atoi(token);
-		
-	token = strsep(&running, info_delimiters);
-	entry->next_hop = atoi(token);
-	
-	token = strsep(&running, info_delimiters);
-	entry->cost = atoi(token);
+void *udp_handler_distvec(void* pvdata){
 
-	return entry;
+    while(!ready){}
+
+    udp_message *mess_info = (udp_message*)pvdata; 
+    const char delimiters[] = "|";
+
+    char *token,*running;
+    running = strdup(mess_info->message);
+    
+    token = strsep(&running, delimiters);
+    
+    //update_table_entries
+    if(strcmp(token, MESSAGE_DISTVEC) == 0){  
+    
+        token = strsep(&running, delimiters);
+        
+        int owner_id = atoi(token);
+        item_list *dv_list = extract_distvec_list(running);
+
+        if (update_routing_table_entries(owner_id, dv_list)){ 
+            //braodcast update to neighbours
+            broadcast_routing_table();
+            //reset timer and wait.        
+        }
+        
+        //should free stuff here!
+    }
+    else if(strcmp(token, MESSAGE_DELIVER) == 0){ 
+        //process the message
+        distvec_message_router(running, 1);
+    }
+}
+
+
+int update_routing_table_entries(int owner_id, item_list *new_entries){
+
+    pthread_mutex_lock(&mutex_routing_update);
+    
+    int update = 0;
+    
+    item_link *p = new_entries->head;
+ 
+    while(p){
+        distvec_entry *entry = (distvec_entry*)p->data;
+            
+        if (update_routing_table_entry(owner_id, entry->dest_id, entry->next_hop, entry->cost) > 0) 
+            update = 1;
+            
+        p = p->next;
+    }
+    
+    pthread_mutex_unlock(&mutex_routing_update);
+    
+    return update;
+}
+
+int update_routing_table_entry(int owner_id, int dest_id, int next_hop_id, int cost){
+    
+    int update = 0;
+    
+    pthread_mutex_lock(&mutex_routing_list); 
+    //check and update if necessary
+    
+    distvec_entry *entry;
+    
+    find_table_entry(dest_id, &entry);
+    
+    int hop_cost = cost_to_hop(owner_id);
+    
+    if (!entry){
+        //add if the entry was never seen before
+        add_routing_table_entry(dest_id, owner_id, hop_cost + cost);
+        update = 1;
+    }
+    else{
+        //compare cost and udpate
+         
+        int hop_cost = cost_to_hop(owner_id);
+        
+        if (entry->cost > (cost + hop_cost)){
+            entry->cost = cost + hop_cost;
+            entry->next_hop = owner_id;
+            update = 1;
+        } 
+    }
+    
+    pthread_mutex_unlock(&mutex_routing_list);
+    
+    return update; //no updates
+}
+
+void add_routing_table_entry(int dest_id, int next_hop_id, int cost){
+    
+    distvec_entry *entry = (distvec_entry*)malloc(sizeof(distvec_entry));
+    entry->dest_id = dest_id;
+    entry->cost = cost;
+    entry->next_hop = next_hop_id;
+
+    add_to_list(distvect_table, entry);
 }
 
 /*
@@ -381,39 +456,31 @@ item_list *extract_distvec_list(char *message){
 }
 
 /*
-*   handles UDP packet messages
+*   Extract destination:next_hop:cost from message
 */
-void *udp_handler_distvec(void* pvdata){
+distvec_entry *extract_hop_info(char *message){
+	if (message == NULL)
+		return NULL;
+	
+	const char info_delimiters[] = ":";
+	
+	distvec_entry *entry = malloc(sizeof(distvec_entry));
+	
+	char *token, *running;
+	running = strdup(message);
+	
+	token = strsep(&running, info_delimiters);
+	entry->dest_id = atoi(token);
+		
+	token = strsep(&running, info_delimiters);
+	entry->next_hop = atoi(token);
+	
+	token = strsep(&running, info_delimiters);
+	entry->cost = atoi(token);
 
-    while(!ready){}
-
-    udp_message *mess_info = (udp_message*)pvdata; 
-    const char delimiters[] = "|";
-
-    char *token,*running;
-    running = strdup(mess_info->message);
-    
-    token = strsep(&running, delimiters);
-    
-    //update_table_entries
-    if(strcmp(token, MESSAGE_DISTVEC) == 0){  
-    
-        token = strsep(&running, delimiters);
-        
-        int source_id = atoi(token);
-        item_list *dv_list = extract_distvec_list(running);
-        
-        if (update_routing_table_entries(dv_list)){ 
-            //braodcast update to neighbours
-            broadcast_routing_table();
-            //reset timer and wait.        
-        }
-    }
-    else if(strcmp(token, MESSAGE_DELIVER) == 0){ 
-        //process the message
-        distvec_message_router(running, 1);
-    }
+	return entry;
 }
+
 
 void initialize_list(item_list *list){
 
@@ -444,6 +511,7 @@ void send_data_message(data_message *mess_info){
 
     if (entry){
         node_info *nb;
+        
         find_neighbour_info(entry->next_hop,nd_data->neighbours, &nb);
         
         if (mess_info->source_id != nd_data->node->id){
@@ -476,6 +544,14 @@ void distvec_message_router(char *message, int from_neighbour){
                         mess_info->path,
                         nd_data->node->id,
                         mess_info->message);
+    }
+    else{
+        printf("from %d to %d hops %d message %s\n", 
+                        mess_info->source_id,
+                        mess_info->dest_id,
+                        nd_data->node->id,
+                        mess_info->message);
+    
     }
                         
     if (mess_info->dest_id == nd_data->node->id){    
