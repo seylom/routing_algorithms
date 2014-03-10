@@ -12,9 +12,12 @@
 #define MESSAGE_SEND_INFO "send_info"
 #define MESSAGE_SEND_DATA "send_data"
 #define MESSAGE_ACK "ack"
+#define MESSAGE_INFO_RECEIVED "info_received"
 #define MESSAGE_START_CONVERGENCE "start"
 #define MESSAGE_DATA "data"
 #define MESSAGE_DISTVEC "distvec_broadcast"
+#define MESSAGE_CONVERGED "converged"
+#define MESSAGE_DELIVER "deliver_message"
 
 #define MAX_DATA_SIZE 1024
 
@@ -59,13 +62,21 @@ typedef struct node_data{
     item_list *messages;
     void(*protocol_handler)();
     void(**udp_handler)(void*);
+    void(*route_message_handler)(char*)
 }node_data;
 
 typedef struct distvec_entry{
-    int destination_id;
+    int dest_id;
     int next_hop;
     int cost;
 }distvec_entry;
+
+typedef struct data_message{
+    int source_id;
+    int dest_id;
+    char* message;
+    char* path;
+}data_message;
 
 void send_converge_request();
 void send_message(int socketfd, char* message);
@@ -80,5 +91,6 @@ void request_virtual_id(int *id);
 item_list *extract_neighbors_info(char *message);
 neighbour *extract_neighbor(char *message);
 node_info *extract_node_information(char *message);
+data_message  *extract_message(char *message, int from_neighbour);
 
 #endif

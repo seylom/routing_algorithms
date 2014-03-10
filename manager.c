@@ -29,12 +29,14 @@
 
 pthread_mutex_t mutex_node_id;
 pthread_mutex_t mutex_node_list;
+pthread_mutex_t mutex_message_list;
 
 int setup_completed = 0;
 int expected_connections = 0;
 int next_available_id = 1;
 struct item_list *client_nodes;
 struct item_list *edges;
+struct item_list *messages;
 
 void sigchld_handler(int s)
 {
@@ -81,7 +83,6 @@ void *thread_handler(void* pv_nodeitem){
 		    break;
 		}
 		
-		
 		buffer[numbytes] = '\0';
 		
 		//Message format expected:  MESSAGE_TYPE|PAYLOAD
@@ -126,10 +127,7 @@ void *thread_handler(void* pv_nodeitem){
 		        //and vice versa for neighbours which are connected.
 		        send_node_info_to_neighbours(node->id);
 		    }
-		    else if (strcmp(token, MESSAGE_SEND_DATA) == 0){  
-		        
-		        //send data messages to the node
-		        send_node_data_messages(node->id);
+		    else if (strcmp(token, MESSAGE_INFO_RECEIVED) == 0){  
 		        
 		        if (setup_completed == 0){
 		            //verify everthing is connected. if so notify nodes to start converging.
@@ -138,6 +136,11 @@ void *thread_handler(void* pv_nodeitem){
                     }
                 }
 		    }
+		}
+		else if (strcmp(token, MESSAGE_CONVERGED) == 0){
+		
+		    //send data messages to the node
+		    send_node_data_messages(node);
 		}
 	}
 	
@@ -168,8 +171,36 @@ int check_connections_completed(){
 /*
 *
 */
-void send_node_data_messages(int node_id){
-
+void send_node_data_messages(node_info *node){
+    
+    //printf("node %d has converged. Sending messages\n", node_id);
+    
+    char buffer[256];
+    int numchars;
+    
+    item_link *p = messages->head;
+    
+    pthread_mutex_lock(&mutex_message_list);
+    
+    while(p){
+        
+        bzero(buffer, 0);
+        
+        data_message *it = (data_message *)p->data;
+      
+        if (node->id == it->source_id){
+           
+            numchars = sprintf(buffer, "%s|%d|%d|%s", MESSAGE_DATA, 
+                it->source_id, it->dest_id, it->message);                                    
+            buffer[numchars] = 0;
+            
+            send_message_with_ack(node->tcp_socketfd, buffer);
+        }
+        
+         p = p->next;
+    }
+    
+    pthread_mutex_unlock(&mutex_message_list);
 }
 
 /*
@@ -356,7 +387,11 @@ void read_topology_file(char* filename){
 	
 	if (file){
 		while(fgets(line,10,file)!=NULL){
-				
+			
+			size_t ln = strlen(line) - 1;
+			if (line[ln] == '\n')
+			    line[ln] = '\0';
+			    
 			edge *topo_edge = malloc(sizeof(edge));
 			
 			running = strdup(line);
@@ -388,11 +423,38 @@ void read_message_file(char* filename){
 	int c;
 	FILE *file;
 	file= fopen(filename,"r");
-	char line[10];
+	char line[256];
+	int numchars;
+	
+	messages = malloc(sizeof(item_list));
+	const char delimiters[] = " ";
+	
+	
 	if (file){
 
-		while(fgets(line,10,file)!=NULL){
+		while(fgets(line,256,file)!=NULL){
 			printf(line);
+			
+			size_t ln = strlen(line) - 1;
+			if (line[ln] == '\n')
+			    line[ln] = '\0';
+			
+			char *running, *token;
+			data_message *n_mess = (data_message *)malloc(sizeof(data_message));
+			running = strdup(line);
+			
+			token = strsep(&running, delimiters);
+			n_mess->source_id = atoi(token);
+			
+			token = strsep(&running, delimiters);
+			n_mess->dest_id = atoi(token);
+			
+			n_mess->message = malloc(256);
+ 
+			strcpy(n_mess->message,running);
+			
+			//numcharsstrncpy(n_mess->message, running, strlen(running));
+			add_to_list(messages, n_mess);
 		}
 	}
 
@@ -461,6 +523,7 @@ int main(int argc, char *argv[])
     
     pthread_mutex_init(&mutex_node_id, NULL);
     pthread_mutex_init(&mutex_node_list, NULL);
+    pthread_mutex_init(&mutex_message_list, NULL);
     
 	if (argc != 3) {
 	    fprintf(stderr,"usage: manager topologyfile messagefile\n");
@@ -553,6 +616,7 @@ int main(int argc, char *argv[])
 	
 	pthread_mutex_destroy(&mutex_node_id);
 	pthread_mutex_destroy(&mutex_node_list);
+    pthread_mutex_destroy(&mutex_message_list);
     pthread_exit(NULL);
 
 	return 0;

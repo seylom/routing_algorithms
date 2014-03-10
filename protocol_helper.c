@@ -19,6 +19,7 @@
 
 //function pointer 
 void (*node_callback)();
+void (*message_router)(char*, int);
             
 //sends the provided message through the socket descriptor provided.
 void send_message(int socketfd, char* message){
@@ -29,6 +30,30 @@ void send_message(int socketfd, char* message){
 		perror("write");
 		exit(1);
 	}
+}
+
+//sends the provided message through the socket descriptor provided.
+int send_message_with_ack(int socketfd, char* message){
+	//int n = write(socketfd, message, strlen(message)) ;
+	int n = send(socketfd, message, strlen(message), 0) ;
+	
+	if (n < 0){
+		perror("write");
+		exit(1);
+	}
+	
+	int numbytes;
+	char buffer[50];
+	bzero(buffer, 0);
+	
+	if ((numbytes = read(socketfd, buffer, sizeof buffer)) < 0) {
+		perror("recv"); 
+	}
+	
+	if (strcmp(buffer, MESSAGE_ACK) == 0)
+	    return 1;
+	    
+	return 0;
 }
 
 /*
@@ -177,6 +202,74 @@ void send_udp_message(char *host, char *port, char *message){
     freeaddrinfo(servinfo); 
     
     close(sockfd);
+}
+
+/*message_packet  *extract_mess_packet(char *message){*/
+/*    */
+/*    if (message == NULL)*/
+/*		return NULL;*/
+/*	*/
+/*	const char info_delimiters[] = "|";*/
+/*	*/
+/*	message_packet *mess = (message_packet *)malloc(sizeof(message_packet));*/
+/*	mess->message = malloc(256);*/
+/*	mess->message[0] = 0;*/
+/*	*/
+/*	mess->path = malloc(256);*/
+/*	mess->path[0] = 0;*/
+/*	*/
+/*	char *token, *running;*/
+/*	running = strdup(message);*/
+/*	*/
+/*	token = strsep(&running, info_delimiters);*/
+/*	mess->source_id = atoi(token);*/
+/*	*/
+/*	token = strsep(&running, info_delimiters);*/
+/*	mess->dest_id = atoi(token);*/
+/*		*/
+/*	token = strsep(&running, info_delimiters);*/
+/*	strncpy(mess->path,token, strlen(token));*/
+/*	*/
+/*	token = strsep(&running, info_delimiters);*/
+/*	strncpy(mess->message,token, strlen(token));*/
+
+/*	return mess;*/
+/*}*/
+
+
+data_message *extract_message(char *message, int from_neighbour){
+    
+    if (message == NULL)
+		return NULL;
+	
+	const char info_delimiters[] = "|";
+	
+	data_message *mess = malloc(sizeof(data_message));
+	mess->message = malloc(256);
+	mess->message[0] = 0;
+	
+	mess->path = malloc(256);
+    mess->path[0] = 0;
+	
+	char *token, *running;
+	running = strdup(message);
+	
+	token = strsep(&running, info_delimiters);
+	mess->source_id = atoi(token);
+	
+	token = strsep(&running, info_delimiters);
+	mess->dest_id = atoi(token);
+		
+	if (from_neighbour){
+	    token = strsep(&running, info_delimiters);
+	    strncpy(mess->path,token, strlen(token));
+	}
+	
+	token = strsep(&running, info_delimiters);
+	strncpy(mess->message,token, strlen(token));
+
+
+	return mess;
 }
 
 /*
@@ -451,17 +544,26 @@ void *node_to_manager_handler(void* pvnd_data){
 			add_to_list(neighbours_list, nb);
 			
 			bzero(buffer, 256);
-			int numnext = sprintf(buffer,"%s|%s", MESSAGE_ACK, MESSAGE_SEND_DATA );
+			int numnext = sprintf(buffer,"%s|%s", MESSAGE_ACK, MESSAGE_INFO_RECEIVED );
 			buffer[numnext] = '\0';
 			
 			send_message(node->tcp_socketfd, buffer);
 			
 		}
 		else if (strcmp(token, MESSAGE_DATA) == 0){
-		    //not yet implemented
+		    
+		    //send ack
+		    bzero(buffer, 256);
+			int numnext = sprintf(buffer,"%s", MESSAGE_ACK);
+			buffer[numnext] = '\0';
+			
+			send_message(node->tcp_socketfd, buffer);
+			
+		    message_router = nd_data->route_message_handler;
+		    message_router(running, 0);
 		}
 		else if (strcmp(token, MESSAGE_START_CONVERGENCE) == 0){
-		    
+			    
 		    node_callback = nd_data->protocol_handler;
 		    node_callback();
 		}
