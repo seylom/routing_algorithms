@@ -351,8 +351,6 @@ void initialize_udp_listening(char* pvndtata){
                 exit(1);
         }
         
-        printf("listening...\n");
-        
         udp_message *message_info = malloc(sizeof(udp_message));
         message_info->message = malloc(256);
         strncpy(message_info->message, buf, numbytes);
@@ -398,7 +396,7 @@ void *node_to_manager_handler(void* pvnd_data){
 		}
 		
 		if(numbytes == 0){
-		    printf("Manager socket closed - exiting.\n");
+		    //printf("Manager socket closed - exiting.\n");
 		    break;
 		}
 		
