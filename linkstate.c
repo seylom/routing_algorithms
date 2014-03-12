@@ -47,6 +47,8 @@ int forwarding_table[GRAPH_SIZE];
 
 int lsp_counter = 0;
 
+int lsp_sent = 0 ;
+
 struct LSP {
 	int node_id;
 	int neighbors[GRAPH_SIZE];
@@ -94,7 +96,7 @@ int main(int argc, char *argv[]) {
 
 	while(1){
 		sleep(5);
-		if (lsp_counter == 5) {
+		if (lsp_sent) {
 			int i;
 			calc_shortest_path();
 			//printf("Shortest Path from Node %d\n", nd_data->node->id);
@@ -136,8 +138,10 @@ void initialize_data_container(node_data *ndata) {
 
 void build_network_map() {
 	printf("Build Network started ...\n");
-	while (lsp_counter < 5) {
-		sleep(5);
+//
+//	// send 5 rounds of LSP
+//	while (lsp_counter ) {
+		sleep(1);
 		node_info* item = nd_data->node;
 		item_link* head_neighbor_costs = nd_data->neighbours_cost->head;
 		item_link* head__neghobor_locations = nd_data->neighbours->head;
@@ -146,7 +150,7 @@ void build_network_map() {
 		bzero(lsp.costs, GRAPH_SIZE * sizeof(int));
 		bzero(lsp.neighbors, GRAPH_SIZE * sizeof(int));
 		lsp.node_id = item->id;
-		lsp.TTL = 4;
+		lsp.TTL = 3;
 		// building the LSP from neighbors
 		while (head_neighbor_costs != NULL) {
 			neighbour* neighbor = (neighbour*) head_neighbor_costs->data;
@@ -165,9 +169,8 @@ void build_network_map() {
 			//printf("LSP message send to %d : %s\n", loc->id, message);
 			head__neghobor_locations = head__neghobor_locations->next;
 		}
-		lsp_counter++;
-		//display_graph();
-	}
+		lsp_sent = 1;
+	//}
 }
 
 void calc_shortest_path(){
@@ -314,16 +317,15 @@ void handle_lsp(char* message) {
 		}
 		// forward lsp
 		lsp.TTL--;
-		char message[256];
-		bzero(message, 256);
-		serialize_lsp(message, lsp);
+		char forward_message[256];
+		bzero(forward_message, 256);
+		serialize_lsp(forward_message, lsp);
 		item_link* head_neighbor_locations = nd_data->neighbours->head;
 		while (head_neighbor_locations != NULL) {
 			node_info* loc = (node_info*) head_neighbor_locations->data;
 			//printf("forwarding to node %d (%s:%s)\n", loc->id, loc->host , loc->port);
 			if (loc != NULL && loc->id != lsp.node_id) {
-				send_udp_message(loc->host, loc->port, message);
-				sleep(1);
+				send_udp_message(loc->host, loc->port, forward_message);
 			}
 			head_neighbor_locations = head_neighbor_locations->next;
 		}
