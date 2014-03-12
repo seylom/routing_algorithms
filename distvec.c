@@ -79,7 +79,7 @@ void time_elapsed(){
     //printf("node %d has converged\n", nd_data->node->id);
     
     //send message to the manager to get messages to be sent, if any
-    char buffer[256];
+    char buffer[MAX_DATA_SIZE];
     int num_chars = sprintf(buffer, "%s|%s", MESSAGE_CONVERGED, MESSAGE_SEND_DATA);
     buffer[num_chars] = '\0';
     
@@ -174,7 +174,7 @@ int cost_to_hop(int neighbour_id){
 void get_routing_table_broadcast(int node_id, char **message){
     
     //char buffer[256];
-    char data[256];
+    char data[MAX_DATA_SIZE];
     
     data[0]= '\0';
     strcpy(data,"");
@@ -200,8 +200,8 @@ void get_routing_table_broadcast(int node_id, char **message){
 // start convergence process.
 void build_network_map(){
 
-    char buffer[256];
-    bzero(buffer, 0);
+    char buffer[MAX_DATA_SIZE];
+    bzero(buffer, MAX_DATA_SIZE);
     
     if(!nd_data){
         return;
@@ -212,7 +212,7 @@ void build_network_map(){
 /*    if (node)*/
 /*        printf("Starting convergence process for node %d\n", node->id);*/
     
-    //send node distance vector view to neighbours. 
+    //send node distance vector view to neighbours.
     pthread_mutex_lock(&mutex_routing_update);
     
     item_list *neighbours = nd_data->neighbours;
@@ -233,6 +233,7 @@ void build_network_map(){
         if (!nb_node)
             continue;
 
+        //printf("adding %d->%d->%d to table", nb->id, nb->id, nb->cost);
         //update_routing_table_entry(node->id, nb->id, nb->id, nb->cost);
         add_routing_table_entry(nb->id, nb->id, nb->cost);
     }
@@ -242,19 +243,17 @@ void build_network_map(){
     broadcast_routing_table();
     
     ready = 1;
-    
-    
 }
 
 void broadcast_routing_table(){
-    char buffer[256];
-    char data[256];
+    char buffer[MAX_DATA_SIZE];
+    char data[MAX_DATA_SIZE];
     
     int node_id = nd_data->node->id;
     
-    bzero(buffer, 0);
+    bzero(buffer, MAX_DATA_SIZE);
     data[0]= '\0';
-    bzero(buffer, 0);
+    bzero(buffer, MAX_DATA_SIZE);
     strcpy(data,"");
     
     //creating message to be sent to neighbors
@@ -301,10 +300,14 @@ void print_routing_table(){
     qsort(&entries, distvect_table->count, 
             sizeof(struct distvec_entry), 
             (compfn) compare);
-            
+    
+    printf("\n");
+           
     for(j=0; j< distvect_table->count; j++){
         printf("%d %d %d\n", entries[j].dest_id,  entries[j].next_hop,  entries[j].cost);
     }
+    
+    printf("\n");
 }
 
 
@@ -417,7 +420,7 @@ int update_routing_table_entry(int owner_id, int dest_id, int next_hop_id, int c
 
 void add_routing_table_entry(int dest_id, int next_hop_id, int cost){
     
-    distvec_entry *entry = (distvec_entry*)malloc(sizeof(distvec_entry));
+    distvec_entry *entry = malloc(sizeof(*entry));
     entry->dest_id = dest_id;
     entry->cost = cost;
     entry->next_hop = next_hop_id;
@@ -434,7 +437,7 @@ item_list *extract_distvec_list(char *message){
 		return NULL;
 		
 	const char array_delimiters[] = "|";
-	item_list *list = malloc(sizeof(item_list));
+	item_list *list = malloc(sizeof(*list));
 	
 	char *token, *running;
 	running = strdup(message);
@@ -444,7 +447,7 @@ item_list *extract_distvec_list(char *message){
 		distvec_entry *entry = extract_hop_info(token);
 		
 		if (entry){
-			add_to_list(list, (void*)entry);
+			add_to_list(list, entry);
 		}else{
 		    break;
 		}
@@ -464,7 +467,7 @@ distvec_entry *extract_hop_info(char *message){
 	
 	const char info_delimiters[] = ":";
 	
-	distvec_entry *entry = malloc(sizeof(distvec_entry));
+	distvec_entry *entry = malloc(sizeof(*entry));
 	
 	char *token, *running;
 	running = strdup(message);
@@ -489,8 +492,8 @@ void initialize_list(item_list *list){
 
 void send_data_message(data_message *mess_info){
 
-    char buffer[256];
-    bzero(buffer, 0);
+    char buffer[MAX_DATA_SIZE];
+    bzero(buffer, MAX_DATA_SIZE);
     int num_chars;
     
     //find routing entry.
@@ -514,6 +517,11 @@ void send_data_message(data_message *mess_info){
         
         find_neighbour_info(entry->next_hop,nd_data->neighbours, &nb);
         
+        if(!nb){
+            //printf("Error! neighbour not ready!");
+            return;
+        }
+        
         if (mess_info->source_id != nd_data->node->id){
             num_chars = sprintf(buffer, "%s|%d|%d|%s %d|%s", MESSAGE_DELIVER,
                         mess_info->source_id, mess_info->dest_id, mess_info->path,
@@ -525,7 +533,7 @@ void send_data_message(data_message *mess_info){
                         nd_data->node->id, mess_info->message);
         }
                        
-        buffer[num_chars] = '\0';
+        buffer[num_chars] = 0;
 
         send_udp_message(nb->host,nb->port, buffer);
     }
@@ -561,6 +569,21 @@ void distvec_message_router(char *message, int from_neighbour){
     send_data_message(mess_info); 
 }
 
+void notify_topology_change(){
+    
+    ready = 0;
+    
+    //flush the routing table
+    //delete_list(distvect_table);
+    
+    distvect_table = malloc(sizeof(*distvect_table));
+    distvect_table->head = NULL;
+    distvect_table->tail = NULL;
+    distvect_table->count = 0;
+    
+    //distvect_table->count = 0;
+}
+
 
 /*
 *   Initializes local data store for node information
@@ -581,6 +604,7 @@ void initialize_data_container(node_data *ndata){
     nd_data->protocol_handler = build_network_map;
     nd_data->udp_handler = udp_handler_distvec;
     nd_data->route_message_handler = distvec_message_router;
+    nd_data->topology_change_handler = notify_topology_change;
     
     distvect_table = malloc(sizeof(item_list));
     distvect_table->head = NULL;

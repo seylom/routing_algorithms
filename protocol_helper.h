@@ -18,8 +18,12 @@
 #define MESSAGE_DISTVEC "distvec_broadcast"
 #define MESSAGE_CONVERGED "converged"
 #define MESSAGE_DELIVER "deliver_message"
-
+#define MESSAGE_TOPO_UPDATE "topo_update"
+#define MESSAGE_FLUSH_TOPO "flush_topo"
+#define MESSAGE_TOPO_FLUSHED  "topo_flushed"
+#define MESSAGE_TOPO_UPDATED "topo_updated"
 #define MAX_DATA_SIZE 1024
+#define MAX_BUFFER_SIZE 1024
 
 typedef struct edge{
     int u;
@@ -62,7 +66,8 @@ typedef struct node_data{
     item_list *messages;
     void(*protocol_handler)();
     void(**udp_handler)(void*);
-    void(*route_message_handler)(char*)
+    void(*route_message_handler)(char*);
+    void(*topology_change_handler)();
 }node_data;
 
 typedef struct distvec_entry{

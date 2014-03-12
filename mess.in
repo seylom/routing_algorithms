@@ -1,4 +1,1 @@
-1 4 here is a message from 1 to 4
-2 5 here is a message from 2 to 5
-2 3 here is a message from 2 to 3
-4 5 here is a message from 4 to 5
+1 7 the path should change every time, although the 4th sending should take the same path as the 1st

@@ -30,10 +30,16 @@
 pthread_mutex_t mutex_node_id;
 pthread_mutex_t mutex_node_list;
 pthread_mutex_t mutex_message_list;
+pthread_mutex_t mutex_ready_ack;
+pthread_mutex_t mutex_converged_ack;
 
 int setup_completed = 0;
 int expected_connections = 0;
+int expected_topo_ack = 0;
 int next_available_id = 1;
+int info_received_ack_count = 0;
+int converged_ack_count = 0;
+
 struct item_list *client_nodes;
 struct item_list *edges;
 struct item_list *messages;
@@ -66,13 +72,13 @@ in_port_t get_in_port(struct sockaddr *sa)
 //handler for the created thread
 void *thread_handler(void* pv_nodeitem){
 	node_info *node = (node_info*)pv_nodeitem;
-	char buffer[256];
+	char buffer[MAX_BUFFER_SIZE];
 	int numbytes;
 	const char delimiters[] = "|";
 
 	while(1){
 	    
-	    bzero(buffer,256);
+	    bzero(buffer,MAX_BUFFER_SIZE);
 
 	    if ((numbytes = read( node->tcp_socketfd, buffer, sizeof buffer)) < 0) {
 		 	perror("recv");
@@ -128,19 +134,45 @@ void *thread_handler(void* pv_nodeitem){
 		        send_node_info_to_neighbours(node->id);
 		    }
 		    else if (strcmp(token, MESSAGE_INFO_RECEIVED) == 0){  
-		        
+
 		        if (setup_completed == 0){
 		            //verify everthing is connected. if so notify nodes to start converging.
                     if (check_connections_completed() > 0){
+                    
+                        setup_completed = 1;
+                        sleep(5);
+                        
                         send_converge_request();
                     }
                 }
+		    }
+		    else if (strcmp(token, MESSAGE_TOPO_FLUSHED) == 0){
+		        
+		        pthread_mutex_lock(&mutex_ready_ack);
+		        
+		        info_received_ack_count++;
+		        
+		        if (info_received_ack_count == expected_connections){
+		            
+		            send_converge_request();
+		        }
+		        
+		        pthread_mutex_unlock(&mutex_ready_ack);
 		    }
 		}
 		else if (strcmp(token, MESSAGE_CONVERGED) == 0){
 		
 		    //send data messages to the node
-		    send_node_data_messages(node);
+		    //pthread_mutex_lock(&mutex_converged_ack);
+		        
+	        //converged_ack_count++;
+	        
+	        //if (converged_ack_count == expected_connections){
+	        
+	            send_node_data_messages(node);
+	        //}
+		        
+		    //pthread_mutex_unlock(&mutex_converged_ack);
 		}
 	}
 	
@@ -154,6 +186,7 @@ void *thread_handler(void* pv_nodeitem){
 int check_connections_completed(){
         
     int value = 0;
+    
     pthread_mutex_lock(&mutex_node_list);
     
     if(expected_connections == client_nodes->count){
@@ -173,9 +206,9 @@ int check_connections_completed(){
 */
 void send_node_data_messages(node_info *node){
     
-    //printf("node %d has converged. Sending messages\n", node_id);
+    //printf("node %d has converged. Sending messages\n", node->id);
     
-    char buffer[256];
+    char buffer[MAX_BUFFER_SIZE];
     int numchars;
     
     item_link *p = messages->head;
@@ -194,7 +227,9 @@ void send_node_data_messages(node_info *node){
                 it->source_id, it->dest_id, it->message);                                    
             buffer[numchars] = 0;
             
-            send_message_with_ack(node->tcp_socketfd, buffer);
+            //printf("Sending a message ... \n");
+            
+            send_message(node->tcp_socketfd, buffer);
         }
         
          p = p->next;
@@ -211,7 +246,7 @@ void send_converge_request(){
     //printf("request for converge\n");
     
     item_link * p = client_nodes->head;
-    char buffer[50];
+    char buffer[256];
     int num_chars = sprintf(buffer, "%s|%s", MESSAGE_START_CONVERGENCE,"go");
     buffer[num_chars] = '\0';
     
@@ -299,11 +334,11 @@ void get_node_neighbours(int node_id, item_list *neighbours){
 */
 void send_node_info_to_neighbours(int node_id){
     
-    char buffer[256];
+    char buffer[MAX_BUFFER_SIZE];
     int num_chars;
     node_info *ninfo = NULL;
     
-    item_list *neighbours = malloc(sizeof(item_list));
+    item_list *neighbours = malloc(sizeof(*neighbours));
     
     get_node_neighbours(node_id, neighbours);
     
@@ -322,6 +357,8 @@ void send_node_info_to_neighbours(int node_id){
 
         send_full_node_information(ninfo->tcp_socketfd, current_node);
         send_full_node_information(current_node->tcp_socketfd, ninfo);
+        
+        sleep(1);
 	}
 	
 	delete_list(&(neighbours->head));
@@ -335,20 +372,19 @@ void send_node_info_to_neighbours(int node_id){
 */
 void send_full_node_information(int socketfd, node_info *ninfo){
 
-    char buffer[256];
+    char buffer[MAX_BUFFER_SIZE];
     int num_chars;
     
-    bzero(buffer,256);
-    char node_data[50];
+    bzero(buffer,MAX_BUFFER_SIZE);
+    char node_data[MAX_BUFFER_SIZE];
     sprintf(node_data,"%d|%s|%s",ninfo->id, ninfo->host, ninfo->port);
     num_chars = sprintf(buffer, "%s|%s", MESSAGE_NODE_INFO, node_data);
     buffer[num_chars] = '\0';
     
-    printf("sending node full info: %s\n", buffer);
+    //printf("sending node full info: %s\n", buffer);
     
     send_message(socketfd, buffer);
 }
-
 
 /*
 *   find a node by its virtual id
@@ -381,20 +417,22 @@ void read_topology_file(char* filename){
 	int c;
 	FILE *file;
 	file= fopen(filename,"r");
-	char line[10];
+	char line[MAX_BUFFER_SIZE];
 	
-	edges = malloc(sizeof(item_list));
+	edges = malloc(sizeof(*edges));
 	const char delimiters[] = " ";
 	char *running, *token;
 	
+	int num_messages = 0;
+	
 	if (file){
-		while(fgets(line,10,file)!=NULL){
+		while(fgets(line,MAX_BUFFER_SIZE,file)!=NULL){
 			
 			size_t ln = strlen(line) - 1;
 			if (line[ln] == '\n')
 			    line[ln] = '\0';
 			    
-			edge *topo_edge = malloc(sizeof(edge));
+			edge *topo_edge = malloc(sizeof(*topo_edge));
 			
 			running = strdup(line);
 			
@@ -414,7 +452,11 @@ void read_topology_file(char* filename){
 			if (id > expected_connections){
 			    expected_connections = id;
 			}
+			
+			num_messages++;
 		}
+		
+	    expected_topo_ack = num_messages*2;
 	}
 
 	fclose(file);
@@ -424,25 +466,23 @@ void read_topology_file(char* filename){
 void read_message_file(char* filename){
 	int c;
 	FILE *file;
-	file= fopen(filename,"r");
-	char line[256];
+	file= fopen(filename,"r"); 
+	char line[MAX_BUFFER_SIZE];
 	int numchars;
 	
-	messages = malloc(sizeof(item_list));
+	messages = malloc(sizeof(*messages));
 	const char delimiters[] = " ";
-	
 	
 	if (file){
 
-		while(fgets(line,256,file)!=NULL){
-			printf(line);
-			
+		while(fgets(line,MAX_BUFFER_SIZE,file)!=NULL){
+
 			size_t ln = strlen(line) - 1;
 			if (line[ln] == '\n')
 			    line[ln] = '\0';
 			
 			char *running, *token;
-			data_message *n_mess = (data_message *)malloc(sizeof(data_message));
+			data_message *n_mess = malloc(sizeof(*n_mess));
 			running = strdup(line);
 			
 			token = strsep(&running, delimiters);
@@ -451,7 +491,7 @@ void read_message_file(char* filename){
 			token = strsep(&running, delimiters);
 			n_mess->dest_id = atoi(token);
 			
-			n_mess->message = malloc(256);
+			n_mess->message = malloc(MAX_BUFFER_SIZE);
  
 			strcpy(n_mess->message,running);
 			
@@ -467,7 +507,7 @@ void read_message_file(char* filename){
 *   Initializes the list storing node information
 */
 void initialize_node_list(){
-   client_nodes = malloc(sizeof(item_list));
+   client_nodes = malloc(sizeof(*client_nodes));
    client_nodes->head = NULL;
    client_nodes->tail = NULL;
    client_nodes->count = 0;
@@ -490,7 +530,7 @@ void register_node(node_info *node){
 */
 node_info *create_node_info(char* host, in_port_t port, int socketfd){
 
-    node_info *nd_item = malloc(sizeof(node_info));
+    node_info *nd_item = malloc(sizeof(*nd_item));
 	nd_item->host = malloc(INET6_ADDRSTRLEN);
 	nd_item->host[0] = '\0';
 	strcpy(nd_item->host, host);
@@ -505,6 +545,77 @@ node_info *create_node_info(char* host, in_port_t port, int socketfd){
 	nd_item->tcp_socketfd = socketfd;
 	
 	return nd_item;
+}
+
+void notify_topo_change(int u, int v, int cost){
+    
+    char buffer[256];
+    int num_chars;
+    node_info* u_node = find_node_info_by_id(u);
+    node_info* v_node = find_node_info_by_id(v);
+    
+    //send update to u and v
+    num_chars = sprintf(buffer,"%s|%d:%d", MESSAGE_TOPO_UPDATE, v, cost); 
+    buffer[num_chars] = '\0';
+    send_message(u_node->tcp_socketfd, buffer);
+    
+    bzero(buffer, 256);
+    
+    num_chars = sprintf(buffer,"%s|%d:%d", MESSAGE_TOPO_UPDATE, u, cost); 
+    buffer[num_chars] = '\0';
+    send_message(v_node->tcp_socketfd, buffer);
+    
+    //force all node to discard routing tables
+    item_link *p = client_nodes->head;
+    
+    bzero(buffer, 256);
+    num_chars = sprintf(buffer,"%s|go", MESSAGE_FLUSH_TOPO); 
+    
+    info_received_ack_count = 0;
+    
+    sleep(2);
+    
+    while(p){
+        node_info *node = (node_info*)p->data;
+        
+        //send message
+        send_message(node->tcp_socketfd, buffer);
+        p = p->next;
+    }
+    
+}
+
+void *std_in_handler(void *pvdata){
+
+    char buffer[MAX_BUFFER_SIZE];
+    const char delimiters[] = " ";
+    size_t n;
+    
+    char *running,*token;
+    
+    while (fgets(buffer, MAX_BUFFER_SIZE, stdin)) {
+    
+        int ln = strlen(buffer);
+
+        if (buffer[ln] == '\n')
+            buffer[ln] = '\0';
+            
+        //edge *topo_edge = malloc(sizeof(*topo_edge));
+
+        running = strdup(buffer);
+
+        token = strsep(&running, delimiters);
+        int u_id = atoi(token);
+
+        token = strsep(&running, delimiters);
+        int v_id = atoi(token);
+
+        token = strsep(&running, delimiters);
+        int cost = atoi(token);
+        
+        //send the edge udpate to the client.
+        notify_topo_change( u_id, v_id, cost);
+    }
 }
 
 int main(int argc, char *argv[])
@@ -526,6 +637,8 @@ int main(int argc, char *argv[])
     pthread_mutex_init(&mutex_node_id, NULL);
     pthread_mutex_init(&mutex_node_list, NULL);
     pthread_mutex_init(&mutex_message_list, NULL);
+    pthread_mutex_init(&mutex_ready_ack, NULL);
+    pthread_mutex_init(&mutex_converged_ack, NULL);
     
 	if (argc != 3) {
 	    fprintf(stderr,"usage: manager topologyfile messagefile\n");
@@ -536,7 +649,7 @@ int main(int argc, char *argv[])
 	read_message_file(argv[2]);
 
 	memset(&hints, 0, sizeof hints);
-	hints.ai_family = AF_UNSPEC;
+	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_PASSIVE; // use my IP
 
@@ -588,9 +701,13 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	printf("manager: waiting for connections...\n");
+	//printf("manager: waiting for connections...\n");
 	
     initialize_node_list();
+    
+    //start listening on stdin
+    pthread_t std_in_thread;
+    pthread_create(&std_in_thread, NULL, (void*)std_in_handler, NULL);
 
 	while(1) {  // main accept() loop
 
@@ -607,7 +724,7 @@ int main(int argc, char *argv[])
 
 		accepted_node_port = ntohs(get_in_port((struct sockaddr *)&node_addr));
 
-		printf("manager: connected to node [%s:%d]\n", s, accepted_node_port);
+		//printf("manager: connected to node [%s:%d]\n", s, accepted_node_port);
 		
 		node_info *contact_node = create_node_info(s, accepted_node_port, node);
 
@@ -619,6 +736,9 @@ int main(int argc, char *argv[])
 	pthread_mutex_destroy(&mutex_node_id);
 	pthread_mutex_destroy(&mutex_node_list);
     pthread_mutex_destroy(&mutex_message_list);
+    pthread_mutex_destroy(&mutex_ready_ack);
+    pthread_mutex_destroy(&mutex_converged_ack);
+    
     pthread_exit(NULL);
 
 	return 0;
