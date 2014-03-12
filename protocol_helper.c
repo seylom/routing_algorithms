@@ -118,8 +118,10 @@ int setup_udp_connection(char* host, char* port){
     int yes=1;
     
     memset(&node_hints, 0, sizeof node_hints);
+	//node_hints.ai_family = AF_UNSPEC;
 	node_hints.ai_family = AF_INET;
 	node_hints.ai_socktype = SOCK_DGRAM;
+	node_hints.ai_family = AF_INET;
 
 	if ((rv = getaddrinfo(host, port, &node_hints, &nodeinfo)) != 0) {
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
