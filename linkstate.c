@@ -1,6 +1,6 @@
 /*
  ============================================================================
- Name        : MP2-StateLinkNode.c
+ Name        : linkstate.c
  Author      : 
  Version     :
  Copyright   : Your copyright notice
@@ -21,6 +21,7 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <limits.h>
 #include "protocol_helper.h"
 
 #define GRAPH_SIZE 17
@@ -28,8 +29,23 @@
 void initialize_data_container(node_data *ndata);
 void build_network_map();
 void *udp_handler_linkstate(void* pvdata);
+int find_minimum_node(int shortest[], int visited[]);
+int find_next_hop(int node_id);
+
 
 int topology[GRAPH_SIZE][GRAPH_SIZE];
+
+// Previous node in shortest path
+int pred[GRAPH_SIZE];
+
+// shortest path cost for each node
+int shortest[GRAPH_SIZE];
+
+int visited[GRAPH_SIZE];
+
+int forwarding_table[GRAPH_SIZE];
+
+int lsp_counter = 0;
 
 struct LSP {
 	int node_id;
@@ -77,8 +93,23 @@ int main(int argc, char *argv[]) {
 			(void*) nd_data);
 
 	while(1){
-		sleep(15);
-		display_graph();
+		sleep(5);
+		if (lsp_counter == 5) {
+			int i;
+			calc_shortest_path();
+			//printf("Shortest Path from Node %d\n", nd_data->node->id);
+//			for(i=0; i<GRAPH_SIZE; i++) {
+//				if (shortest[i] < INT32_MAX)
+//					printf("%d : %d  ", i , shortest[i] );
+//			}
+			printf("\nForwarding table for node %d\n", nd_data->node->id);
+			printf("| Node | Next Hop |\n");
+			for(i=0; i<GRAPH_SIZE; i++) {
+				if (forwarding_table[i] > 0)
+					printf("|  %d   |    %d     |\n", i , forwarding_table[i] );
+			}
+		}
+		//display_graph();
 	}
 	close(node_udp);
 	close(node_tcp);
@@ -104,8 +135,8 @@ void initialize_data_container(node_data *ndata) {
 }
 
 void build_network_map() {
-	printf("Build Network called\n");
-	while (1) {
+	printf("Build Network started ...\n");
+	while (lsp_counter < 5) {
 		sleep(5);
 		node_info* item = nd_data->node;
 		item_link* head_neighbor_costs = nd_data->neighbours_cost->head;
@@ -131,16 +162,82 @@ void build_network_map() {
 		while (head__neghobor_locations != NULL) {
 			node_info* loc = (node_info*) head__neghobor_locations->data;
 			send_udp_message(loc->host, loc->port, message);
-			printf("LSP message send to %d : %s\n", loc->id, message);
+			//printf("LSP message send to %d : %s\n", loc->id, message);
 			head__neghobor_locations = head__neghobor_locations->next;
 		}
+		lsp_counter++;
 		//display_graph();
 	}
 }
 
+void calc_shortest_path(){
+	int i,j,v;
+	for(i=0; i< GRAPH_SIZE; i++) {
+		pred[i] = 0;
+		shortest[i] = INT32_MAX;
+		visited[i] = 0;
+		forwarding_table[i] = 0;
+	}
+	int node_id = nd_data->node->id;
+	shortest[node_id] = 0;
+	pred[node_id] = 0;
+	for(i=0; i < GRAPH_SIZE ; i++) {
+		if (topology[node_id][i] > 0) {
+			shortest[i] = topology[node_id][i];
+			pred[i] = node_id;
+		}
+	}
+	while(1) {
+		int w = find_minimum_node(shortest, visited);
+		if (w < 0) break;
+
+		visited[w] = 1;
+
+		for(v=0; v<GRAPH_SIZE ; v++) {
+			if (visited[v]==0 && topology[w][v] > 0) {
+				if (shortest[w] + topology[w][v] < shortest[v]) {
+					shortest[v] = shortest[w] + topology[w][v];
+					pred[v] = w;
+				}
+			}
+		}
+	}
+	//printf("Shortest path calculation completed\n");
+
+	for(i=0; i<GRAPH_SIZE; i++) {
+		if (shortest[i] < INT32_MAX && i!=node_id && shortest[i] > 0)
+			forwarding_table[i] = find_next_hop(i);
+	}
+}
+
+int find_minimum_node(int shortest[], int visited[]) {
+	int min = INT32_MAX;
+	int min_index = -1;
+	int i;
+	for(i=0; i <GRAPH_SIZE; i++) {
+		if (!visited[i]) {
+			if (shortest[i] < min) {
+				min = shortest[i];
+				min_index = i;
+			}
+		}
+	}
+	return min_index;
+}
+
+int find_next_hop(int node_id) {
+	int source = nd_data->node->id;
+	int pred_node = pred[node_id], current_node = node_id;
+	while(pred_node != source) {
+		//printf("current: %d, prev: %d\n", current_node, pred_node);
+		current_node = pred_node;
+		pred_node = pred[pred_node];
+	}
+	return current_node;
+}
+
 void *udp_handler_linkstate(void* pvdata) {
 	udp_message *mess_info = (udp_message*) pvdata;
-	//printf("udp_handler_linkstate is called.\n");
 	handle_lsp(mess_info->message);
 }
 
@@ -189,24 +286,28 @@ struct LSP deserialize_lsp(char* str) {
 	return lsp;
 }
 
-void display_graph() {
-	int i, j;
-	printf("\nGraph of topology for node %d\n", nd_data->node->id);
-	for (i = 0; i < GRAPH_SIZE; i++) {
-		for (j = 0; j < GRAPH_SIZE; j++) {
-			printf("%d", topology[i][j]);
-		}
-		printf("\n");
-	}
-	printf("------\n");
-}
+//void display_graph() {
+//	int i, j;
+//	printf("\nGraph of topology for node %d\n", nd_data->node->id);
+//	for (i = 0; i < GRAPH_SIZE; i++) {
+//		for (j = 0; j < GRAPH_SIZE; j++) {
+//			printf("%d", topology[i][j]);
+//		}
+//		printf("\n");
+//	}
+//	printf("------\n");
+//}
 
+/* Handles receiving parsing and forwarding LSP packages */
 void handle_lsp(char* message) {
 	int i;
 	struct LSP lsp = deserialize_lsp(message);
-	//printf("Node %d has send lsp with TTL %d\n", lsp.node_id, lsp.TTL);
+
+	/* own lsp and lsp with zero TTL are invalid */
 	if (lsp.node_id != nd_data->node->id && lsp.TTL > 0) {
 		int node_id = lsp.node_id;
+
+		// Update topology from received lsp
 		for (i = 0; i < GRAPH_SIZE; i++) {
 			topology[i][node_id] = lsp.costs[i];
 			topology[node_id][i] = lsp.costs[i];
@@ -216,14 +317,15 @@ void handle_lsp(char* message) {
 		char message[256];
 		bzero(message, 256);
 		serialize_lsp(message, lsp);
-		item_link* head__neghobor_locations = nd_data->neighbours->head;
-		while (head__neghobor_locations != NULL) {
-			node_info* loc = (node_info*) head__neghobor_locations->data;
-			if (loc->id != lsp.node_id) {
+		item_link* head_neighbor_locations = nd_data->neighbours->head;
+		while (head_neighbor_locations != NULL) {
+			node_info* loc = (node_info*) head_neighbor_locations->data;
+			//printf("forwarding to node %d (%s:%s)\n", loc->id, loc->host , loc->port);
+			if (loc != NULL && loc->id != lsp.node_id) {
 				send_udp_message(loc->host, loc->port, message);
-				printf("LSP message from %d forwarded to %d : %s\n",lsp.node_id, loc->id, message);
+				sleep(1);
 			}
-			head__neghobor_locations = head__neghobor_locations->next;
+			head_neighbor_locations = head_neighbor_locations->next;
 		}
 	}
 }
