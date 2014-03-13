@@ -33,29 +33,29 @@ void send_message(int socketfd, char* message){
 	}
 }
 
-/*//sends the provided message through the socket descriptor provided.*/
-/*int send_message_with_ack(int socketfd, char* message){*/
-/*	//int n = write(socketfd, message, strlen(message)) ;*/
-/*	int n = send(socketfd, message, strlen(message), 0) ;*/
-/*	*/
-/*	if (n < 0){*/
-/*		perror("write");*/
-/*		exit(1);*/
-/*	}*/
-/*	*/
-/*	int numbytes;*/
-/*	char buffer[50];*/
-/*	bzero(buffer, 0);*/
-/*	*/
-/*	if ((numbytes = read(socketfd, buffer, sizeof buffer)) < 0) {*/
-/*		perror("recv"); */
-/*	}*/
-/*	*/
-/*	if (strcmp(buffer, MESSAGE_ACK) == 0)*/
-/*	    return 1;*/
-/*	    */
-/*	return 0;*/
-/*}*/
+//sends the provided message through the socket descriptor provided.
+int send_message_with_ack(int socketfd, char* message){
+	//int n = write(socketfd, message, strlen(message)) ;
+	int n = send(socketfd, message, strlen(message), 0) ;
+	
+	if (n < 0){
+		perror("write");
+		exit(1);
+	}
+	
+	int numbytes;
+	char buffer[50];
+	bzero(buffer, 0);
+	
+	if ((numbytes = read(socketfd, buffer, sizeof buffer)) < 0) {
+		perror("recv"); 
+	}
+	
+	if (strcmp(buffer, MESSAGE_ACK) == 0)
+	    return 1;
+	    
+	return 0;
+}
 
 /*
 * Establishes a TCP connection with host using the provided port
@@ -357,7 +357,7 @@ void delete_list(item_link** head)
    *head = NULL;
 }
 
-int update_neighbours_list(item_list* list, int u, int cost){
+int update_neighbours_cost(item_list* list, int u, int cost){
        
     item_link *p = list->head;
     int updated = 0;
@@ -381,6 +381,25 @@ int update_neighbours_list(item_list* list, int u, int cost){
     }
     
     return updated;
+}
+
+int update_neighbours_list(item_list* list, node_info *node){
+       
+    item_link *p = list->head;
+    int updated = 0;
+    
+    for(p;p!=NULL;p=p->next){
+    
+        node_info *nb = (node_info*)p->data;
+        
+        if (nb->id == node->id) 
+            return 0 ;
+    }
+    
+    add_to_list(list, node);
+    
+    return 1;
+
 }
 
 void remove_from_neighbours_cost(item_list *list, int id){  
@@ -547,6 +566,22 @@ void initialize_udp_listening(char* pvndtata){
     }
 }
 
+void cleanup(node_data **data){
+    
+    if ((*data)->neighbours)
+        delete_list(&(((*data)->neighbours)->head));
+        
+    if ((*data)->neighbours_cost)
+        delete_list(&(((*data)->neighbours_cost)->head));
+        
+    if ((*data)->messages)    
+        delete_list(&(((*data)->messages)->head));
+    
+    free(*data);
+   
+    *data = NULL;
+}
+
 /*
 *   handles node connection to the manager and message received
 */
@@ -570,7 +605,7 @@ void *node_to_manager_handler(void* pvnd_data){
     buffer[num_chars] = '\0';
     
     send_message(node->tcp_socketfd, buffer);
-	
+ 
     while(1){
     
         bzero(buffer, MAX_BUFFER_SIZE);
@@ -582,6 +617,8 @@ void *node_to_manager_handler(void* pvnd_data){
 		
 		if(numbytes == 0){
 		    //printf("Manager socket closed - exiting.\n");
+		    //cleanup(&nd_data);
+ 
 		    break;
 		}
 		
@@ -631,9 +668,12 @@ void *node_to_manager_handler(void* pvnd_data){
 		}
 		else if (strcmp(token, MESSAGE_NODE_INFO) == 0){ //node info message
 			
+			
 			node_info *nb = extract_node_information(running);
 			
-			add_to_list(neighbours_list, nb);
+			if (!update_neighbours_list(neighbours_list, nb)){
+			    free(nb);
+			}
 			
 			if (neighbours_list->count == neighbours_cost_list->count){
 				 bzero(buffer, MAX_BUFFER_SIZE);
@@ -664,11 +704,19 @@ void *node_to_manager_handler(void* pvnd_data){
 			neighbour *nb = extract_neighbor(running);
 			
 			if (nb->cost >= 0){
-			    int exists = update_neighbours_list(nd_data->neighbours_cost, nb->id, nb->cost);
+			    
+			    int exists = update_neighbours_cost(nd_data->neighbours_cost, nb->id, nb->cost);
+			    
 			    printf("now linked to node %d with cost %d\n", nb->id, nb->cost);
 			    
 			    if (exists == 0){
 			        //request node info for the neighbour we don't have
+			        bzero(buffer, MAX_BUFFER_SIZE);
+			        int req_numchars = sprintf(buffer,"%s|%d", MESSAGE_REQUEST_NODE_INFO, nb->id);
+			        buffer[req_numchars] = '\0';
+			        send_message(node->tcp_socketfd, buffer);
+			        
+			        sleep(1);
 			    }
 			}
 			else
@@ -696,6 +744,9 @@ void *node_to_manager_handler(void* pvnd_data){
 			buffer[numnext] = '\0';
 			
 			send_message(node->tcp_socketfd, buffer);
+		}
+		else if (strcmp(token, MESSAGE_REQUEST_NODE_INFO) == 0){
+		    
 		}
     }
     
