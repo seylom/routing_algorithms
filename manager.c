@@ -183,6 +183,19 @@ void *thread_handler(void* pv_nodeitem){
 		    //send data messages to the node
 		    send_node_data_messages(node);
 		}
+		else if (strcmp(token, MESSAGE_REQUEST_NODE_INFO) == 0){
+		
+		    token = strsep (&running, delimiters);
+		    
+		    int req_node_id = atoi(token);
+ 
+		    node_info* req_node = find_node_info_by_id(req_node_id);
+		    
+		    if (req_node){
+		    
+		        send_full_node_information(node->tcp_socketfd, req_node);
+		    }
+		}
 	}
 	
 	pthread_exit(NULL);

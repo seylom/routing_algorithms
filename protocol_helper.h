@@ -22,6 +22,7 @@
 #define MESSAGE_FLUSH_TOPO "flush_topo"
 #define MESSAGE_TOPO_FLUSHED  "topo_flushed"
 #define MESSAGE_TOPO_UPDATED "topo_updated"
+#define MESSAGE_REQUEST_NODE_INFO "request_node_info"
 #define MAX_DATA_SIZE 1024
 #define MAX_BUFFER_SIZE 1024
 
