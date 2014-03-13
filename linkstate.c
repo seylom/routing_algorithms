@@ -47,8 +47,13 @@ int visited[GRAPH_SIZE];
 
 int forwarding_table[GRAPH_SIZE];
 
+/* flag that indicated if LSP is broadcasted to neighbors */
 int lsp_sent = 0 ;
 
+/* flag that indicated the node has converged after last topology change */
+int converged = 0;
+
+/* Structure of an LSP message*/
 struct LSP {
 	int node_id;
 	int neighbors[GRAPH_SIZE];
@@ -94,10 +99,10 @@ int main(int argc, char *argv[]) {
 	pthread_create(&thread, NULL, (void*) node_to_manager_handler,
 			(void*) nd_data);
 
-	int converged = 0;
+
 	while(1){
 		if (lsp_sent && !converged) {
-			printf("Waiting for convergence ...\n");
+			//printf("Waiting for convergence ...\n");
 			sleep(5);
 			calc_shortest_path();
 			show_forwarding_table();
@@ -115,7 +120,6 @@ void send_converged(){
     char buffer[256];
     int num_chars = sprintf(buffer, "%s|%s", MESSAGE_CONVERGED, MESSAGE_SEND_DATA);
     buffer[num_chars] = '\0';
-
     send_message(nd_data->node->tcp_socketfd, buffer);
 }
 
@@ -138,40 +142,35 @@ void initialize_data_container(node_data *ndata) {
 }
 
 void build_network_map() {
-	printf("Build Network started ...\n");
-//
-//	// send 5 rounds of LSP
-//	while (lsp_counter ) {
-		sleep(1);
-		node_info* item = nd_data->node;
-		item_link* head_neighbor_costs = nd_data->neighbours_cost->head;
-		item_link* head__neghobor_locations = nd_data->neighbours->head;
-		struct LSP lsp;
-		char message[256];
-		bzero(lsp.costs, GRAPH_SIZE * sizeof(int));
-		bzero(lsp.neighbors, GRAPH_SIZE * sizeof(int));
-		lsp.node_id = item->id;
-		lsp.TTL = 4;
-		// building the LSP from neighbors
-		while (head_neighbor_costs != NULL) {
-			neighbour* neighbor = (neighbour*) head_neighbor_costs->data;
-			lsp.neighbors[neighbor->id] = 1;
-			lsp.costs[neighbor->id] = neighbor->cost;
-			topology[item->id][neighbor->id] = neighbor->cost;
-			topology[neighbor->id][item->id] = neighbor->cost;
-			head_neighbor_costs = head_neighbor_costs->next;
-		}
-		// sending LSP to all neighbors
-		bzero(message, 256);
-		serialize_lsp(message, lsp);
-		while (head__neghobor_locations != NULL) {
-			node_info* loc = (node_info*) head__neghobor_locations->data;
-			send_udp_message(loc->host, loc->port, message);
-			//printf("LSP message send to %d : %s\n", loc->id, message);
-			head__neghobor_locations = head__neghobor_locations->next;
-		}
-		lsp_sent = 1;
-	//}
+	//printf("Build Network started ...\n");
+	sleep(1);
+	node_info* item = nd_data->node;
+	item_link* head_neighbor_costs = nd_data->neighbours_cost->head;
+	item_link* head__neghobor_locations = nd_data->neighbours->head;
+	struct LSP lsp;
+	char message[256];
+	bzero(lsp.costs, GRAPH_SIZE * sizeof(int));
+	bzero(lsp.neighbors, GRAPH_SIZE * sizeof(int));
+	lsp.node_id = item->id;
+	lsp.TTL = 4;
+	// building the LSP from neighbors and populating topology from neighbors
+	while (head_neighbor_costs != NULL) {
+		neighbour* neighbor = (neighbour*) head_neighbor_costs->data;
+		lsp.neighbors[neighbor->id] = 1;
+		lsp.costs[neighbor->id] = neighbor->cost;
+		topology[item->id][neighbor->id] = neighbor->cost;
+		topology[neighbor->id][item->id] = neighbor->cost;
+		head_neighbor_costs = head_neighbor_costs->next;
+	}
+	// sending LSP to all neighbors
+	bzero(message, 256);
+	serialize_lsp(message, lsp);
+	while (head__neghobor_locations != NULL) {
+		node_info* loc = (node_info*) head__neghobor_locations->data;
+		send_udp_message(loc->host, loc->port, message);
+		head__neghobor_locations = head__neghobor_locations->next;
+	}
+	lsp_sent = 1;
 }
 
 void calc_shortest_path(){
@@ -206,8 +205,7 @@ void calc_shortest_path(){
 			}
 		}
 	}
-	//printf("Shortest path calculation completed\n");
-
+	// Build forwarding table
 	for(i=0; i<GRAPH_SIZE; i++) {
 		if (shortest[i] < INT32_MAX && i!=node_id && shortest[i] > 0)
 			forwarding_table[i] = find_next_hop(i);
@@ -242,18 +240,27 @@ int find_next_hop(int node_id) {
 
 void show_forwarding_table() {
 	int i;
-	printf("\nForwarding table for node %d\n", nd_data->node->id);
-	printf("| Node | Next Hop |\n");
+	printf("Routing Table for node %d\n", nd_data->node->id);
 	for(i=0; i<GRAPH_SIZE; i++) {
-		if (forwarding_table[i] > 0)
-			printf("|  %d   |    %d     |\n", i , forwarding_table[i] );
+		if (shortest[i] < INT32_MAX) {
+			printf("%d %d : %d", i , shortest[i], nd_data->node->id);
+			int prev_node = pred[i];
+			if (prev_node > 0) {
+				while(prev_node != nd_data->node->id  ) {
+					printf(" %d",prev_node);
+					prev_node = pred[prev_node];
+				}
+				printf(" %d",i);
+			}
+			printf("\n");
+		}
 	}
 }
 
 void *udp_handler_linkstate(void* pvdata) {
 	udp_message *mess_info = (udp_message*) pvdata;
 	char* message = mess_info->message;
-	printf("udp_handler_linkstate got: %s\n", message);
+	//printf("udp_handler_linkstate got: %s\n", message);
 	if (message[0] == 'l') {
 		handle_lsp(message);
 	} else {
@@ -320,9 +327,7 @@ struct LSP deserialize_lsp(char* str) {
 
 
 void linkstate_message_router(char *message, int from_neighbour){
-	printf("Message to forward: %s\n", message);
 	if (strlen(message) > 0) {
-		printf("message handler called\n");
 		handle_message(message);
 	}
 }
@@ -330,27 +335,39 @@ void linkstate_message_router(char *message, int from_neighbour){
 void handle_message(char* message) {
 	char message_copy[256];
 	strcpy(message_copy, message);
+
+	// appending this node as a hop to the forwarded message.
+	char buf[4];
+	sprintf(buf,"|%d",nd_data->node->id);
+	strcat(message_copy, buf);
 	char* ch = strtok(message, "|");
 	int source_id = atoi(ch);
 
+	// unpacking message
 	ch = strtok(NULL, "|");
 	int dest_id = atoi(ch);
 
-	if (dest_id == nd_data->node->id) {
-		char* msg = ch = strtok(NULL, "|");
-		printf("Thanks! message is received : %s\n", msg);
-		return;
+	char* msg = ch = strtok(NULL, "|");
+	printf("from %d to %d hops",source_id, dest_id);
+	while(ch = strtok(NULL, "|")) {
+		printf(" %s",ch);
 	}
+	// adding current node to the list of hops
+	sprintf(buf,"%d",nd_data->node->id);
+	printf(" %s",buf);
 
-	int next_hop = forwarding_table[dest_id];
-	item_link* head_neighbor_locations = nd_data->neighbours->head;
-	while (head_neighbor_locations != NULL) {
-		node_info* loc = (node_info*) head_neighbor_locations->data;
-		if (loc->id == next_hop) {
-			printf("forward message: %s\n",message_copy);
-			send_udp_message(loc->host, loc->port, message_copy);
+	printf(" message %s\n", msg);
+
+	if (dest_id != nd_data->node->id) {
+		int next_hop = forwarding_table[dest_id];
+		item_link* head_neighbor_locations = nd_data->neighbours->head;
+		while (head_neighbor_locations != NULL) {
+			node_info* loc = (node_info*) head_neighbor_locations->data;
+			if (loc->id == next_hop) {
+				send_udp_message(loc->host, loc->port, message_copy);
+			}
+			head_neighbor_locations = head_neighbor_locations->next;
 		}
-		head_neighbor_locations = head_neighbor_locations->next;
 	}
 
 }
