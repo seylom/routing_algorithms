@@ -85,6 +85,8 @@ void time_elapsed(){
     
     print_routing_table();
     
+    sleep(1);
+    
     send_message(nd_data->node->tcp_socketfd, buffer);
 }
 
@@ -437,7 +439,9 @@ item_list *extract_distvec_list(char *message){
 		return NULL;
 		
 	const char array_delimiters[] = "|";
-	item_list *list = malloc(sizeof(*list));
+	
+	item_list *list;
+	create_list(&list);
 	
 	char *token, *running;
 	running = strdup(message);
@@ -488,7 +492,6 @@ distvec_entry *extract_hop_info(char *message){
 void initialize_list(item_list *list){
 
 }
-
 
 void send_data_message(data_message *mess_info){
 
@@ -541,8 +544,8 @@ void send_data_message(data_message *mess_info){
 
 void distvec_message_router(char *message, int from_neighbour){
     
-   data_message *mess_info = extract_message(message, from_neighbour);
-         
+    data_message *mess_info = extract_message(message, from_neighbour);
+   
     //extract message and send to next hop
 
     if (from_neighbour){
@@ -574,14 +577,13 @@ void notify_topology_change(){
     ready = 0;
     
     //flush the routing table
-    //delete_list(distvect_table);
-    
+    delete_list(&distvect_table);
+    free(distvect_table);
+	
     distvect_table = malloc(sizeof(*distvect_table));
     distvect_table->head = NULL;
     distvect_table->tail = NULL;
     distvect_table->count = 0;
-    
-    //distvect_table->count = 0;
 }
 
 
@@ -591,25 +593,14 @@ void notify_topology_change(){
 void initialize_data_container(node_data *ndata){
     nd_data = malloc(sizeof(node_data));
 	
-	nd_data->neighbours = malloc(sizeof(item_list));
-	nd_data->neighbours->head = NULL;
-	nd_data->neighbours->tail = NULL;
-    nd_data->neighbours->count = 0;
-    
-    nd_data->neighbours_cost = malloc(sizeof(item_list));
-	nd_data->neighbours_cost->head = NULL;
-	nd_data->neighbours_cost->tail = NULL;
-    nd_data->neighbours_cost->count = 0;
+	create_list(&(nd_data->neighbours));
+	create_list(&(nd_data->neighbours_cost));
+	create_list(&distvect_table);
     
     nd_data->protocol_handler = build_network_map;
     nd_data->udp_handler = udp_handler_distvec;
     nd_data->route_message_handler = distvec_message_router;
     nd_data->topology_change_handler = notify_topology_change;
-    
-    distvect_table = malloc(sizeof(item_list));
-    distvect_table->head = NULL;
-    distvect_table->tail = NULL;
-    distvect_table->count = 0;
 } 
 
 int main(int argc, char *argv[])
@@ -642,6 +633,7 @@ int main(int argc, char *argv[])
 
 	//create a node item.
     node_info *item = malloc(sizeof(node_info));
+	item->id = 0;
     
     item->host = malloc(INET6_ADDRSTRLEN);
     item->host[0] = '\0';
@@ -655,6 +647,7 @@ int main(int argc, char *argv[])
 	strcpy(item->host, "localhost");
 	
 	//create a thread to handle communication with manager
+	
 	pthread_t thread;
 	pthread_create(&thread, NULL, (void*)node_to_manager_handler, (void*)nd_data);
 

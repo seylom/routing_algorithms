@@ -83,6 +83,7 @@ typedef struct data_message{
     char* path;
 }data_message;
 
+
 void send_converge_request();
 void send_message(int socketfd, char* message);
 int setup_tcp_connection(char* host, char* port);
@@ -92,10 +93,9 @@ void send_udp_message(char *host, char *port, char *message);
 
 void send_node_info_to_neighbours(int id);
 node_info *find_node_info_by_id(int node_id);
-void request_virtual_id(int *id);
 item_list *extract_neighbors_info(char *message);
 neighbour *extract_neighbor(char *message);
 node_info *extract_node_information(char *message);
-
+void create_list(item_list **list);
 
 #endif

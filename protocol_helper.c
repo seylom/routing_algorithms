@@ -100,7 +100,7 @@ int setup_tcp_connection(char* host, char* port){
 		fprintf(stderr, "distvec: failed to connect\n");
 		return 2;
 	}
-
+	
 	freeaddrinfo(managerinfo); // all done with this structure
 
 	return node;
@@ -119,7 +119,7 @@ int setup_udp_connection(char* host, char* port){
     
     memset(&node_hints, 0, sizeof node_hints);
 	//node_hints.ai_family = AF_UNSPEC;
-	node_hints.ai_family = AF_INET;
+	//node_hints.ai_family = AF_INET;
 	node_hints.ai_socktype = SOCK_DGRAM;
 	node_hints.ai_family = AF_INET;
 
@@ -176,7 +176,6 @@ void send_udp_message(char *host, char *port, char *message){
     hints.ai_socktype = SOCK_DGRAM;
 
     if ((rv = getaddrinfo(host, port, &hints, &servinfo)) != 0) {
-    	printf("you are indeed here: %s:%d!\n", host, port);
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
         return 1;
     }
@@ -297,6 +296,13 @@ item_list *extract_neighbors_info(char *message){
 	return list;
 }
 
+void create_list(item_list **list){
+	item_list *nlist = malloc(sizeof(item_list));
+	nlist->head = NULL;
+	nlist->tail = NULL;
+	nlist->count = 0;
+	*list = nlist;
+} 
 
 /*
 * Add an item to the list
@@ -351,11 +357,7 @@ void delete_list(item_link** head)
    *head = NULL;
 }
 
-void delete_neighbour_from_list(){
-
-}
-
-void update_neighbours_list(item_list* list, int u, int cost){
+int update_neighbours_list(item_list* list, int u, int cost){
        
     item_link *p = list->head;
     int updated = 0;
@@ -374,11 +376,11 @@ void update_neighbours_list(item_list* list, int u, int cost){
         neighbour *nb = malloc(sizeof(*nb));
         nb->id = u;
         nb->cost = cost;
-        
-        printf("adding neighbour\n");
-        
+
         add_to_list(list, nb);
     }
+    
+    return updated;
 }
 
 void remove_from_neighbours_cost(item_list *list, int id){  
@@ -391,7 +393,6 @@ void remove_from_neighbours_cost(item_list *list, int id){
     neighbour *n = (neighbour*)p->data;
     
     if (n->id == id){
-        printf("found!\n");
         free(p->data); 
         list->head = list->head->next;
         list->count = 0;
@@ -409,7 +410,6 @@ void remove_from_neighbours_cost(item_list *list, int id){
              p->next = q->next;
              list->count -= 1;
              free(q);
-             printf("found!\n");
              break;
         }
         
@@ -431,7 +431,6 @@ void remove_from_neighbours(item_list *list, int id){
     node_info *n = (node_info*)p->data;
     
     if (n->id == id){
-        printf("found!\n");
         free(p->data); 
         list->head = list->head->next;
         list->count -= 1;
@@ -449,7 +448,6 @@ void remove_from_neighbours(item_list *list, int id){
              p->next = q->next;
              list->count -= 1;
              free(q);
-             printf("found!\n");
              break;
         }
         
@@ -461,7 +459,6 @@ void remove_from_neighbours(item_list *list, int id){
     
     while(r){
         node_info *s = (node_info *)r->data;
-        printf("rem: %d\n", s->id);
         r = r->next;
     }
 }
@@ -573,7 +570,7 @@ void *node_to_manager_handler(void* pvnd_data){
     buffer[num_chars] = '\0';
     
     send_message(node->tcp_socketfd, buffer);
-    
+	
     while(1){
     
         bzero(buffer, MAX_BUFFER_SIZE);
@@ -636,16 +633,15 @@ void *node_to_manager_handler(void* pvnd_data){
 			
 			node_info *nb = extract_node_information(running);
 			
-			//printf("[%s:%s]\n", nb->host, nb->port);
-			
 			add_to_list(neighbours_list, nb);
 			
-			bzero(buffer, MAX_BUFFER_SIZE);
-			int numnext = sprintf(buffer,"%s|%s", MESSAGE_ACK, MESSAGE_INFO_RECEIVED );
-			buffer[numnext] = '\0';
-			
-			send_message(node->tcp_socketfd, buffer);
-			
+			if (neighbours_list->count == neighbours_cost_list->count){
+				 bzero(buffer, MAX_BUFFER_SIZE);
+				 int numnext = sprintf(buffer,"%s|%s", MESSAGE_ACK, MESSAGE_INFO_RECEIVED );
+				 buffer[numnext] = '\0';
+				
+				 send_message(node->tcp_socketfd, buffer);
+			}
 		}
 		else if (strcmp(token, MESSAGE_DATA) == 0){
 		    
@@ -668,8 +664,12 @@ void *node_to_manager_handler(void* pvnd_data){
 			neighbour *nb = extract_neighbor(running);
 			
 			if (nb->cost >= 0){
-			    update_neighbours_list(nd_data->neighbours_cost, nb->id, nb->cost);
+			    int exists = update_neighbours_list(nd_data->neighbours_cost, nb->id, nb->cost);
 			    printf("now linked to node %d with cost %d\n", nb->id, nb->cost);
+			    
+			    if (exists == 0){
+			        //request node info for the neighbour we don't have
+			    }
 			}
 			else
 			{

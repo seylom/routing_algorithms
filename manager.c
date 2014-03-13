@@ -21,7 +21,7 @@
 
 #include "protocol_helper.h"
 
-#define BACKLOG 10	 // how many pending connections queue will hold
+#define BACKLOG 100	 // how many pending connections queue will hold
 
 #define MAX_BUFFER 1024
 
@@ -75,6 +75,8 @@ void *thread_handler(void* pv_nodeitem){
 	char buffer[MAX_BUFFER_SIZE];
 	int numbytes;
 	const char delimiters[] = "|";
+	
+	node->id = 0;
 
 	while(1){
 	    
@@ -88,7 +90,7 @@ void *thread_handler(void* pv_nodeitem){
 		if (numbytes == 0){
 		    break;
 		}
-		
+ 
 		buffer[numbytes] = '\0';
 		
 		//Message format expected:  MESSAGE_TYPE|PAYLOAD
@@ -102,16 +104,19 @@ void *thread_handler(void* pv_nodeitem){
 		token = strsep (&running, delimiters);
 		
 		if (strcmp(token, MESSAGE_CONTACT) == 0){  //contact message
-		    
+		    		
 		    //token = strsep (&running, delimiters);
 
 		    //Gets a uniquely assigned virtual id assigned by manager and 
 		    //used to identify nodes in the vitual topology
-            request_virtual_id(&(node->id));
+            int id = request_virtual_id();
+			node->id = id;
             
             //add node to manager list of node_info. Such list contains information
             //about all node connected to the manager
             register_node(node);
+			
+
             
             //Update node's preferred connection port for UDP traffic
 		    //This information is needed when sent to neighbours so that
@@ -119,11 +124,11 @@ void *thread_handler(void* pv_nodeitem){
 		    int port_no = atoi(NODE_PORT) + node->id;
 		    int n = sprintf(node->port,"%d",port_no);
 		    node->port[n]=0;
-            
+
             //send virtual id and neighbours info
             send_virtual_id_and_neighbours_topo(node->tcp_socketfd, node->id);
 		}
-		else if (strcmp(token, MESSAGE_ACK) == 0){  //acknoldgement
+		else if (strcmp(token, MESSAGE_ACK) == 0){  //acknowldgement
 		    
 		    token = strsep (&running, delimiters);
 		    
@@ -131,24 +136,37 @@ void *thread_handler(void* pv_nodeitem){
 		        //send node virtual id + cost
 		        //Also to send full ip + port of node to neighbours
 		        //and vice versa for neighbours which are connected.
+				
 		        send_node_info_to_neighbours(node->id);
 		    }
-		    else if (strcmp(token, MESSAGE_INFO_RECEIVED) == 0){  
+		    else if (strcmp(token, MESSAGE_INFO_RECEIVED) == 0){ //sent only after all neighbours full info have been received.
 
-		        if (setup_completed == 0){
+ 				//pthread_mutex_lock(&mutex_node_list);
+				//pthread_mutex_lock(&mutex_node_id);
+				pthread_mutex_lock(&mutex_ready_ack);
+				
+				info_received_ack_count++;
+				
+				if (info_received_ack_count == ( expected_connections - 1)){
+					//if (setup_completed == 0){
 		            //verify everthing is connected. if so notify nodes to start converging.
-                    if (check_connections_completed() > 0){
+                    //if (check_connections_completed() > 0){
                     
                         setup_completed = 1;
-                        sleep(5);
+                        //sleep(5);
                         
                         send_converge_request();
-                    }
+                    //}
                 }
+				
+				pthread_mutex_unlock(&mutex_ready_ack);
+				//pthread_mutex_unlock(&mutex_node_id);
+				//pthread_mutex_unlock(&mutex_node_list); 
 		    }
 		    else if (strcmp(token, MESSAGE_TOPO_FLUSHED) == 0){
 		        
 		        pthread_mutex_lock(&mutex_ready_ack);
+
 		        
 		        info_received_ack_count++;
 		        
@@ -163,16 +181,7 @@ void *thread_handler(void* pv_nodeitem){
 		else if (strcmp(token, MESSAGE_CONVERGED) == 0){
 		
 		    //send data messages to the node
-		    //pthread_mutex_lock(&mutex_converged_ack);
-		        
-	        //converged_ack_count++;
-	        
-	        //if (converged_ack_count == expected_connections){
-	        
-	            send_node_data_messages(node);
-	        //}
-		        
-		    //pthread_mutex_unlock(&mutex_converged_ack);
+		    send_node_data_messages(node);
 		}
 	}
 	
@@ -180,33 +189,9 @@ void *thread_handler(void* pv_nodeitem){
 }
 
 /*
-*   Verifies all nodes in the topology file have
-*   joined the system.
-*/
-int check_connections_completed(){
-        
-    int value = 0;
-    
-    pthread_mutex_lock(&mutex_node_list);
-    
-    if(expected_connections == client_nodes->count){
-        setup_completed = 1;
-        value = 1;
-    }else{
-        value = -1;
-    }
-    
-    pthread_mutex_unlock(&mutex_node_list);
-    
-    return value;
-}
-
-/*
 *
 */
 void send_node_data_messages(node_info *node){
-    
-    //printf("node %d has converged. Sending messages\n", node->id);
     
     char buffer[MAX_BUFFER_SIZE];
     int numchars;
@@ -227,8 +212,6 @@ void send_node_data_messages(node_info *node){
                 it->source_id, it->dest_id, it->message);                                    
             buffer[numchars] = 0;
             
-            //printf("Sending a message ... \n");
-            
             send_message(node->tcp_socketfd, buffer);
         }
         
@@ -243,7 +226,6 @@ void send_node_data_messages(node_info *node){
 */
 void send_converge_request(){
 
-    //printf("request for converge\n");
     sleep(1);
     item_link * p = client_nodes->head;
     char buffer[256];
@@ -261,13 +243,20 @@ void send_converge_request(){
 /*
 *   request a new virtual id
 */
-void request_virtual_id(int *id){
+int request_virtual_id(){
+	
+	//pthread_mutex_lock(&mutex_node_list);
 	pthread_mutex_lock (&mutex_node_id);
-    
-    *id = next_available_id;
+    //pthread_mutex_lock(&mutex_ready_ack);
+	
+    int id = next_available_id;
     next_available_id += 1;
     
+	//pthread_mutex_unlock(&mutex_ready_ack);
     pthread_mutex_unlock (&mutex_node_id);
+	//pthread_mutex_unlock(&mutex_node_list); 
+	
+	return id;
 }
 
 /*
@@ -321,7 +310,7 @@ void get_node_neighbours(int node_id, item_list *neighbours){
 	        topo_edge->v != node_id )
 	        continue;
 	       
-	    char link_info[10];
+	    //char link_info[10];
 	     
 	    int neighbour_id = (topo_edge->u == node_id) ? topo_edge->v: topo_edge->u;
 	    
@@ -338,8 +327,13 @@ void send_node_info_to_neighbours(int node_id){
     int num_chars;
     node_info *ninfo = NULL;
     
-    item_list *neighbours = malloc(sizeof(*neighbours));
-    
+    item_list *neighbours;
+    create_list(&neighbours);
+	
+	//pthread_mutex_lock(&mutex_node_list);
+	//pthread_mutex_lock (&mutex_node_id);
+	//pthread_mutex_lock(&mutex_ready_ack);
+	
     get_node_neighbours(node_id, neighbours);
     
     node_info* current_node = find_node_info_by_id(node_id);
@@ -360,6 +354,10 @@ void send_node_info_to_neighbours(int node_id){
         
         sleep(1);
 	}
+	
+	//pthread_mutex_unlock(&mutex_ready_ack);
+	//pthread_mutex_unlock (&mutex_node_id);
+	//pthread_mutex_unlock(&mutex_node_list);
 	
 	delete_list(&(neighbours->head));
 	
@@ -393,8 +391,6 @@ node_info *find_node_info_by_id(int node_id){
     
     node_info *node = NULL;
     
-    pthread_mutex_lock(&mutex_node_list);
-    
     item_link * p = client_nodes->head;
     
     for(p;p!=NULL;p=p->next){
@@ -405,8 +401,6 @@ node_info *find_node_info_by_id(int node_id){
         }
     }
 
-    pthread_mutex_unlock(&mutex_node_list);
-    
     return node;
 }
 
@@ -419,7 +413,8 @@ void read_topology_file(char* filename){
 	file= fopen(filename,"r");
 	char line[MAX_BUFFER_SIZE];
 	
-	edges = malloc(sizeof(*edges));
+	create_list(&edges);
+	
 	const char delimiters[] = " ";
 	char *running, *token;
 	
@@ -456,7 +451,7 @@ void read_topology_file(char* filename){
 			num_messages++;
 		}
 		
-	    expected_topo_ack = num_messages*2;
+	    //expected_topo_ack = num_messages*2;
 	}
 
 	fclose(file);
@@ -470,7 +465,8 @@ void read_message_file(char* filename){
 	char line[MAX_BUFFER_SIZE];
 	int numchars;
 	
-	messages = malloc(sizeof(*messages));
+	create_list(&messages);
+	
 	const char delimiters[] = " ";
 	
 	if (file){
@@ -495,7 +491,6 @@ void read_message_file(char* filename){
  
 			strcpy(n_mess->message,running);
 			
-			//numcharsstrncpy(n_mess->message, running, strlen(running));
 			add_to_list(messages, n_mess);
 		}
 	}
@@ -507,10 +502,11 @@ void read_message_file(char* filename){
 *   Initializes the list storing node information
 */
 void initialize_node_list(){
-   client_nodes = malloc(sizeof(*client_nodes));
-   client_nodes->head = NULL;
-   client_nodes->tail = NULL;
-   client_nodes->count = 0;
+   // client_nodes = malloc(sizeof(*client_nodes));
+   // client_nodes->head = NULL;
+   // client_nodes->tail = NULL;
+   // client_nodes->count = 0;
+   create_list(&client_nodes);
 }
 
 /*
@@ -518,11 +514,15 @@ void initialize_node_list(){
 */
 void register_node(node_info *node){
 
-    pthread_mutex_lock(&mutex_node_list);
-    
+    //pthread_mutex_lock(&mutex_node_list);
+	//pthread_mutex_lock(&mutex_node_id);
+    //pthread_mutex_lock(&mutex_ready_ack);
+	
     add_to_list(client_nodes, (void*)node);
 
-    pthread_mutex_unlock(&mutex_node_list);
+	//pthread_mutex_unlock(&mutex_ready_ack);
+	//pthread_mutex_unlock(&mutex_node_id);
+    //pthread_mutex_unlock(&mutex_node_list);
 }
 
 /*
@@ -696,6 +696,7 @@ int main(int argc, char *argv[])
 	sa.sa_handler = sigchld_handler; // reap all dead processes
 	sigemptyset(&sa.sa_mask);
 	sa.sa_flags = SA_RESTART;
+	
 	if (sigaction(SIGCHLD, &sa, NULL) == -1) {
 		perror("sigaction");
 		exit(1);
@@ -724,8 +725,6 @@ int main(int argc, char *argv[])
 
 		accepted_node_port = ntohs(get_in_port((struct sockaddr *)&node_addr));
 
-		//printf("manager: connected to node [%s:%d]\n", s, accepted_node_port);
-		
 		node_info *contact_node = create_node_info(s, accepted_node_port, node);
 
         //start a separate thread for the node connection
