@@ -74,7 +74,7 @@ char s[INET6_ADDRSTRLEN];
 
 int main(int argc, char *argv[]) {
 	if (argc != 2) {
-		fprintf(stderr, "Usage: ./link_state <managerhostname>\n");
+		fprintf(stderr, "Usage: ./linkstate <managerhostname>\n");
 		exit(1);
 	}
 
@@ -243,7 +243,7 @@ int find_next_hop(int node_id) {
 
 void show_forwarding_table() {
 	int i;
-	printf("Routing Table for node %d\n", nd_data->node->id);
+	//printf("Routing Table for node %d\n", nd_data->node->id);
 	for(i=0; i<GRAPH_SIZE; i++) {
 		if (shortest[i] < INT32_MAX) {
 			printf("%d %d : %d", i , shortest[i], nd_data->node->id);
@@ -296,18 +296,26 @@ void serialize_lsp(char* str, struct LSP lsp) {
 
 struct LSP deserialize_lsp(char* str) {
 	struct LSP lsp;
-	char * pch;
+	char * pch, *cp;
 	int i;
-	pch = strtok(str, "|");
+	
+	cp = strdup (str);
+	
+	pch = strsep(&cp, "|");
 	if (strcmp(pch, "lsp") == 0) {
-		pch = strtok(NULL, "|");
+		pch = strsep(&cp, "|");
 		lsp.node_id = atoi(pch);
 
-		pch = strtok(NULL, "|");
+		pch = strsep(&cp, "|");
 		lsp.TTL = atoi(pch);
 		for (i = 0; i < GRAPH_SIZE; i++) {
-			pch = strtok(NULL, "|");
+			pch = strsep(&cp, "|");
+			
+			if (!pch && i < GRAPH_SIZE)
+			    printf("Something went wrong here! [%d]\n", i);
+			
 			lsp.costs[i] = atoi(pch);
+			
 			if (lsp.costs[i] > 0)
 				lsp.neighbors[i] = 1;
 		}
