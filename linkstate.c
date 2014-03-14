@@ -139,9 +139,12 @@ void initialize_data_container(node_data *ndata) {
 	nd_data->protocol_handler = build_network_map;
 	nd_data->udp_handler = udp_handler_linkstate;
 	nd_data->route_message_handler = linkstate_message_router;
+	nd_data->topology_change_handler = build_network_map;
 }
 
 void build_network_map() {
+	lsp_sent = 0;
+	converged = 0;
 	//printf("Build Network started ...\n");
 	sleep(1);
 	node_info* item = nd_data->node;
