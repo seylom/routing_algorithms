@@ -1,0 +1,44 @@
+======================================
+
+Authors:
+    Faran Negarestan ()
+    Seylom Ayivi (ayivigu2)
+    
+ 
+======================================
+
+
+About our work:
+
+The provided source code follows the MP guidelines and provides implementation
+of both link state and distance vector routing algorithms.
+
+
+1- cd to the directory containing the files
+2- enter ./manager <topology file> <message file>
+3- enter the following lines depending on the algorithm
+
+./distvec manager_host  
+
+or 
+./linkstate manager_host
+
+where manager_host is the host address.
+
+
+IMPLEMENTATION
+--------------
+
+We make use of pthreads to handle the communication between nodes themselves
+and the manager node communication.
+
+node <-> node    :  UDP
+node <-> manager :  TCP
+
+
+
+NOTES
+-----
+
+We had to resort to the use of timers to ensure message would be displayed in the right
+order and the data could be received in a correct order by the nodes.

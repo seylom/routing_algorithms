@@ -736,7 +736,9 @@ void *node_to_manager_handler(void* pvnd_data){
 		else if (strcmp(token, MESSAGE_FLUSH_TOPO) == 0){
 			
 		    topology_change_callback = nd_data->topology_change_handler;
-			topology_change_callback();
+		    
+		    if (topology_change_callback)
+			    topology_change_callback();
 			
 			//send ack
 			bzero(buffer, MAX_BUFFER_SIZE);
@@ -744,9 +746,6 @@ void *node_to_manager_handler(void* pvnd_data){
 			buffer[numnext] = '\0';
 			
 			send_message(node->tcp_socketfd, buffer);
-		}
-		else if (strcmp(token, MESSAGE_REQUEST_NODE_INFO) == 0){
-		    
 		}
     }
     
