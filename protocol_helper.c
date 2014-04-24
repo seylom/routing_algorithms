@@ -122,6 +122,7 @@ int setup_udp_connection(char* host, char* port){
 	//node_hints.ai_family = AF_INET;
 	node_hints.ai_socktype = SOCK_DGRAM;
 	node_hints.ai_family = AF_INET;
+	node_hints.ai_flags = AI_PASSIVE;
 
 	if ((rv = getaddrinfo(host, port, &node_hints, &nodeinfo)) != 0) {
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
